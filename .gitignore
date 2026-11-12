@@ -1,3 +1,17 @@
 .release/
 *.zip
 .env
+
+# Local only: agent notes, design docs, mock tests. Never shipped.
+CLAUDE.md
+dev/
+.claude/
+
+# Editor and system leftovers.
+.vscode/
+.idea/
+*.bak
+*.orig
+*.tmp
+Thumbs.db
+.DS_Store

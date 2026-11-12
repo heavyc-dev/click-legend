@@ -10,3 +10,10 @@ ignore:
   - README.md
   - .github
   - .gitignore
+  # Local only; listed so they cannot ship even if committed later.
+  - CLAUDE.md
+  - dev
+  - .claude
+  - .vscode
+  - .idea
+  - .pkgmeta
