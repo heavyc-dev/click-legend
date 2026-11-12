@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.5.1
+- The unlocked marker is now a thin green outline instead of a green fill, so the background color, opacity and on/off setting show correctly while the legend is unlocked.
+
 ## 1.5.0
 - New label style: Icons. Mouse buttons get a small mouse glyph with the bound button lit (left, right, middle, wheel up, wheel down, side buttons) in place of the text label. Keyboard keys keep their text.
 

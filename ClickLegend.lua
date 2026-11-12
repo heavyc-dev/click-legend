@@ -610,21 +610,44 @@ panel:SetMovable(true)
 panel:RegisterForDrag("LeftButton")
 panel:Hide()
 
-local bg = panel:CreateTexture(nil, "BACKGROUND")
+local bg = panel:CreateTexture(nil, "BACKGROUND", nil, -8)
 
--- Shown only while unlocked: a tint that marks the area to drag.
-local mover = panel:CreateTexture(nil, "OVERLAY")
-mover:SetColorTexture(ALLY_COLOR[1], ALLY_COLOR[2], ALLY_COLOR[3], 0.25)
+-- Shown only while unlocked: a thin outline that marks the area to drag. An
+-- outline, not a fill, so the background color and opacity read true while
+-- the legend is being placed.
+local OUTLINE = 2
+local moverEdges = {}
+for i = 1, 4 do
+    local edge = panel:CreateTexture(nil, "OVERLAY")
+    edge:SetColorTexture(ALLY_COLOR[1], ALLY_COLOR[2], ALLY_COLOR[3], 0.9)
+    edge:Hide()
+    moverEdges[i] = edge
+end
 
--- The background and the drag tint cover the legend plus the chosen padding.
-local function ApplyBackground()
+-- The background and the outline cover the legend plus the chosen padding.
+local function ApplyBackground(unlocked)
     local pad = db.bgPadding
-    for _, tex in ipairs({ bg, mover }) do
-        tex:ClearAllPoints()
-        tex:SetPoint("TOPLEFT", panel, "TOPLEFT", -pad, pad)
-        tex:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", pad, -pad)
-    end
+    bg:ClearAllPoints()
+    bg:SetPoint("TOPLEFT", panel, "TOPLEFT", -pad, pad)
+    bg:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", pad, -pad)
     bg:SetColorTexture(db.bgR, db.bgG, db.bgB, db.bgA)
+    bg:SetShown(db.background)
+
+    local top, bottom, left, right = moverEdges[1], moverEdges[2], moverEdges[3], moverEdges[4]
+    for _, edge in ipairs(moverEdges) do edge:ClearAllPoints() end
+    top:SetPoint("TOPLEFT", panel, "TOPLEFT", -pad, pad)
+    top:SetPoint("TOPRIGHT", panel, "TOPRIGHT", pad, pad)
+    top:SetHeight(OUTLINE)
+    bottom:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", -pad, -pad)
+    bottom:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", pad, -pad)
+    bottom:SetHeight(OUTLINE)
+    left:SetPoint("TOPLEFT", panel, "TOPLEFT", -pad, pad)
+    left:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", -pad, -pad)
+    left:SetWidth(OUTLINE)
+    right:SetPoint("TOPRIGHT", panel, "TOPRIGHT", pad, pad)
+    right:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", pad, -pad)
+    right:SetWidth(OUTLINE)
+    for _, edge in ipairs(moverEdges) do edge:SetShown(unlocked) end
 end
 
 local layerText = panel:CreateFontString(nil, "OVERLAY")
@@ -938,9 +961,7 @@ local function RenderNow()
     for _, b in ipairs(bars) do b:Hide() end
 
     local unlocked = not db.locked
-    ApplyBackground()
-    mover:SetShown(unlocked)
-    bg:SetShown(db.background)
+    ApplyBackground(unlocked)
     panel:EnableMouse(unlocked)
 
     -- Pick the layer for the modifiers held right now. A modifier with nothing

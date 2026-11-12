@@ -2,7 +2,7 @@
 ## Title: ClickLegend
 ## Notes: Shows your click-cast bindings as an on-screen icon legend (ally and enemy spells for every bound key or button) and in unit tooltips. Works with EllesmereUI HoverCast and the game's own Click Casting.
 ## Author: Heavy C Dev
-## Version: 1.5.0
+## Version: 1.5.1
 ## OptionalDeps: EllesmereUI, EllesmereUIRaidFrames
 ## SavedVariables: ClickLegendDB
 ## X-License: MIT
