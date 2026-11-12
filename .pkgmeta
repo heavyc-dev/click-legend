@@ -1,0 +1,12 @@
+package-as: ClickLegend
+
+# CurseForge shows this file as the release notes.
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+# Repository-only files that should not ship inside the addon.
+ignore:
+  - README.md
+  - .github
+  - .gitignore

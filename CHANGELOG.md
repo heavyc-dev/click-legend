@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.6.0
+- Reads bindings from Clique, VuhDo and HealBot, as well as EllesmereUI HoverCast and the game's own click casting.
+- New "Bindings from" setting: Automatic (the first source that has bindings) or one source of your choice. Also `/clg source`.
+- VuhDo and HealBot hostile-target assignments show on the enemy row; Clique's friend and enemy binding sets are respected.
+- Hover-aware rows: with the cursor on a friendly unit the enemy spells dim, and the other way round.
+- Modifier layers: show only the held modifier's bindings (as before) or every layer at once, stacked.
+- Bindings that cannot fire (spell not learned, macro deleted) are greyed out and marked in tooltips and `/clg list`.
+- New visibility choice: only while hovering a unit frame.
+- Attach the legend to the party frames (above, below, left or right, with a gap). It falls back to the dragged position when no party frames are on screen.
+- Icon label style now draws keyboard keys as keycaps.
+- While unlocked, hovering a legend icon shows the spell and its key.
+- Custom ally and enemy colors.
+- Optional separate settings per character.
+- Layout presets: Default, Compact, Sidebar and Everything.
+- Export your settings as text and import someone else's (`/clg export`, `/clg import`).
+- Settings are now split into Display, Look, Order and Share pages.
+
 ## 1.5.1
 - The unlocked marker is now a thin green outline instead of a green fill, so the background color, opacity and on/off setting show correctly while the legend is unlocked.
 

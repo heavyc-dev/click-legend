@@ -1,10 +1,18 @@
 ## Interface: 16001
 ## Title: ClickLegend
-## Notes: Shows your click-cast bindings as an on-screen icon legend (ally and enemy spells for every bound key or button) and in unit tooltips. Works with EllesmereUI HoverCast and the game's own Click Casting.
+## Notes: Shows your click-cast bindings as an on-screen icon legend (ally and enemy spells for every bound key or button) and in unit tooltips. Reads EllesmereUI HoverCast, Clique, VuhDo, HealBot and the game's own Click Casting.
 ## Author: Heavy C Dev
-## Version: 1.5.1
-## OptionalDeps: EllesmereUI, EllesmereUIRaidFrames
+## Version: @project-version@
+## OptionalDeps: EllesmereUI, EllesmereUIRaidFrames, Clique, VuhDo, HealBot
 ## SavedVariables: ClickLegendDB
+## SavedVariablesPerCharacter: ClickLegendCharDB
 ## X-License: MIT
+## X-Curse-Project-ID: 1799862
 
-ClickLegend.lua
+Core.lua
+Sources.lua
+Display.lua
+Tooltip.lua
+Options.lua
+Window.lua
+Commands.lua
