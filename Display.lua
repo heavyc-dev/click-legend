@@ -11,7 +11,9 @@ local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 -- The bindings on screen, and the signatures they were last drawn from.
 local layers, lastSig, lastKeySig
 local db
+local ownSource = false             -- showing ClickLegend's own bindings, which follow the hovered unit
 ns.Subscribe("db", function(value) db = value end)
+ns.Subscribe("source", function(value) ownSource = value == "ClickLegend" end)
 
 local HeldMods, LongKey, ModsLong, MouseRank, OrderKeys =
     ns.HeldMods, ns.LongKey, ns.ModsLong, ns.MouseRank, ns.OrderKeys
@@ -124,7 +126,7 @@ end
 --  What is under the cursor. Drives two things: dimming the row that does not
 --  apply to the hovered unit, and the "while hovering a unit frame" visibility.
 -------------------------------------------------------------------------------
-local hover = { side = nil, onFrame = false }
+local hover = { side = nil, onFrame = false, dead = false }
 
 local function OverWorld()
     local focus
@@ -140,7 +142,7 @@ end
 
 -- Returns true when the hovered unit's side or frame state changed.
 local function ReadHover()
-    local side, onFrame = nil, false
+    local side, onFrame, dead = nil, false, false
     if UnitExists and UnitCanAttack then
         local ok, exists = pcall(UnitExists, "mouseover")
         if ok and not (issecretvalue and issecretvalue(exists)) and exists then
@@ -148,13 +150,21 @@ local function ReadHover()
             if ok2 and not (issecretvalue and issecretvalue(hostile)) then
                 side = hostile and "enemy" or "ally"
                 onFrame = not OverWorld()
+                if UnitIsDeadOrGhost then
+                    local ok3, gone = pcall(UnitIsDeadOrGhost, "mouseover")
+                    dead = ok3 and not (issecretvalue and issecretvalue(gone)) and gone and true or false
+                end
             end
         end
     end
-    if side == hover.side and onFrame == hover.onFrame then return false end
-    hover.side, hover.onFrame = side, onFrame
+    if side == hover.side and onFrame == hover.onFrame and dead == hover.dead then return false end
+    hover.side, hover.onFrame, hover.dead = side, onFrame, dead
     return true
 end
+
+-- The side of the unit under the cursor ("ally", "enemy" or nil) and whether
+-- it is dead. Cast.lua reads this to show what a key would do right now.
+function ns.HoverState() return hover.side, hover.dead end
 
 -------------------------------------------------------------------------------
 --  Moving the legend
@@ -650,6 +660,7 @@ end
 function ns.Invalidate() lastSig = nil end
 
 local function RebuildSettingsPages() ns.RebuildSettingsPages() end      -- Options.lua
+local function UpdateMinimapButton() if ns.UpdateMinimapButton then ns.UpdateMinimapButton() end end     -- Launcher.lua
 
 local function Refresh(force)
     if not db then return end
@@ -661,6 +672,7 @@ local function Refresh(force)
         ns.Publish("layers", layers)
         Render()
     end
+    if force then UpdateMinimapButton() end         -- a setting may have changed
     if keySig ~= lastKeySig then
         local first = lastKeySig == nil
         lastKeySig = keySig
@@ -728,11 +740,14 @@ hoverDriver:SetScript("OnUpdate", function(_, dt)
     hoverElapsed = hoverElapsed + (dt or 0)
     if hoverElapsed < 0.1 then return end
     hoverElapsed = 0
-    if not db or db.hidden or not (db.hoverDim or db.visibility == "hover") then
-        if hover.side or hover.onFrame then hover.side, hover.onFrame = nil, false end
+    if not db or db.hidden or not (db.hoverDim or db.visibility == "hover" or ownSource) then
+        if hover.side or hover.onFrame then hover.side, hover.onFrame, hover.dead = nil, false, false end
         return
     end
-    if ReadHover() then Render() end
+    if ReadHover() then
+        if ownSource then Safe(ns.Refresh, false) end        -- a dead unit can change what a key does
+        Render()
+    end
 end)
 
 -------------------------------------------------------------------------------

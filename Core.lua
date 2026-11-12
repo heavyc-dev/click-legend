@@ -4,12 +4,16 @@
 --  key or button, an ally icon and an enemy icon. Hold Shift / Ctrl / Alt to
 --  see that modifier's bindings. The bindings are read from whichever of
 --  these has some, in this order (or from the one picked in the settings):
+--    0. ClickLegend's own, when switched on
 --    1. EllesmereUI HoverCast   2. Clique   3. VuhDo   4. HealBot
 --    5. the game's own click casting (C_ClickBindings)
 --  None of them is required, and none of them is changed.
 --
---  Read-only: it never changes bindings and creates no secure frames, so it
---  cannot taint or block anything in combat.
+--  It can also do the click casting itself: the player's own sets of keys,
+--  each key with rules (dead ally, ally, enemy, ...), edited in the settings
+--  window. That is off until a character switches it on. Until then the addon
+--  only reads and draws: it touches no unit frame and writes no secure
+--  attribute. All of the code that does is in Provider.lua.
 -------------------------------------------------------------------------------
 local ADDON_NAME, ns = ...
 
@@ -68,7 +72,7 @@ local DEFAULTS = {
     locked = false, hidden = false, labels = true, labelSize = 9, bars = true,
     labelStyle = "text",        -- text | icon
     visibility = "always",      -- always | group | combat | hover
-    source = "auto",            -- auto | eui | clique | vuhdo | healbot | blizzard
+    source = "auto",            -- auto | own | eui | clique | vuhdo | healbot | blizzard
     layers = "held",            -- held | all: which modifier layers are drawn
     hoverDim = true,            -- dim the row that does not apply to the hovered unit
     flagMissing = true,         -- grey out bindings whose spell or macro is gone
@@ -86,6 +90,8 @@ local DEFAULTS = {
     reverse = false,
     perLine = 12,               -- keys per line before the legend wraps
     customOrder = {},           -- list of keys, used when sort == "custom"
+    minimap = true,             -- the minimap button
+    minimapAngle = 215,         -- where on the minimap's edge, in degrees
 }
 local RANGES = {
     scale = { 0.5, 2 }, alpha = { 0.1, 1 },
@@ -95,6 +101,7 @@ local RANGES = {
     allyR = { 0, 1 }, allyG = { 0, 1 }, allyB = { 0, 1 },
     enemyR = { 0, 1 }, enemyG = { 0, 1 }, enemyB = { 0, 1 },
     anchorGap = { 0, 60, true },
+    minimapAngle = { 0, 360 },
 }
 local CHOICES = {
     layout = { horizontal = true, vertical = true },
@@ -102,7 +109,7 @@ local CHOICES = {
     sort = { mouse = true, keyboard = true, alpha = true, custom = true },
     visibility = { always = true, group = true, combat = true, hover = true },
     layers = { held = true, all = true },
-    source = { auto = true, eui = true, clique = true, vuhdo = true, healbot = true, blizzard = true },
+    source = { auto = true, own = true, eui = true, clique = true, vuhdo = true, healbot = true, blizzard = true },
     anchor = { screen = true, party = true },
     anchorSide = { above = true, below = true, left = true, right = true },
     labelStyle = { text = true, icon = true },

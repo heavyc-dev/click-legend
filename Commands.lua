@@ -34,6 +34,10 @@ local SetCharacterProfile, OpenShareTab, RefreshWindow =
     ns.SetCharacterProfile, ns.OpenShareTab, ns.RefreshWindow
 local RegisterGameOptions, ToggleWindow =
     ns.RegisterGameOptions, ns.ToggleWindow
+local CastCommand, InitCast, UpdateProvider =
+    ns.CastCommand, ns.InitCast, ns.UpdateProvider
+local OpenGuidedSetup, ShowWelcome, StartLauncher =
+    ns.OpenGuidedSetup, ns.ShowWelcome, ns.StartLauncher
 
 -------------------------------------------------------------------------------
 --  Slash commands
@@ -73,11 +77,14 @@ end
 local function Help()
     Print("commands")
     print("  /clg menu - open the ClickLegend settings window")
+    print("  /clg setup - guided setup of ClickLegend's own click casting; /clg welcome - the welcome window")
+    print("  /clg minimap - show or hide the minimap button")
     print("  /clg config - open the settings in EllesmereUI (or the window without it)")
     print("  /clg lock | unlock - lock in place, or unlock to drag")
     print("  /clg show | hide - toggle the legend")
     print("  /clg visible always | group | combat | hover (now " .. db.visibility .. ")")
-    print("  /clg source auto | eui | clique | vuhdo | healbot | blizzard (now " .. db.source .. ")")
+    print("  /clg source auto | own | eui | clique | vuhdo | healbot | blizzard (now " .. db.source .. ")")
+    print("  /clg cast - ClickLegend's own bindings: status, on | off, sets, set <name>")
     print("  /clg layers held | all - modifier layers shown (now " .. db.layers .. ")")
     print("  /clg anchor screen | party, /clg side above | below | left | right, /clg gap <0-60>")
     print("  /clg hoverdim | missing - toggle row dimming, greying of broken bindings")
@@ -104,7 +111,7 @@ end
 
 -- Each kind of command is a table from its name to the setting it changes.
 local TOGGLES = {
-    hoverdim = "hoverDim", missing = "flagMissing", bars = "bars", labels = "labels",
+    hoverdim = "hoverDim", missing = "flagMissing", bars = "bars", labels = "labels", minimap = "minimap",
     bg = "background", flip = "enemyFirst", reverse = "reverse",
 }
 local NUMBERS = {
@@ -183,6 +190,7 @@ local ACTIONS = {
         return true
     end,
     order = SetOrder,
+    cast = function(arg, rawArg) return CastCommand(arg, rawArg) end,
     profile = function()
         local on = not (ClickLegendCharDB.enabled == true)
         SetCharacterProfile(on)
@@ -217,6 +225,8 @@ local ACTIONS = {
         end
     end,
     menu = function() ToggleWindow() end,
+    setup = function() OpenGuidedSetup() end,
+    welcome = function() ShowWelcome(true) end,
     -- EllesmereUI's panel when it is there (it does not open in combat), the
     -- addon's own window otherwise.
     config = function()
@@ -270,6 +280,7 @@ for _, event in ipairs({
     "ADDON_LOADED", "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "MODIFIER_STATE_CHANGED",
     "GROUP_ROSTER_UPDATE", "PLAYER_EQUIPMENT_CHANGED", "SPELLS_CHANGED", "UPDATE_MACROS",
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",      -- combat state, for the "Visible" setting
+    "UPDATE_SHAPESHIFT_FORM", "UNIT_PET",                 -- change which rule of an own binding fires
 }) do
     pcall(events.RegisterEvent, events, event)      -- an event a client lacks must not stop the rest
 end
@@ -301,6 +312,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then
             Safe(InitDB)
+            Safe(InitCast)
             if db then
                 Safe(HookTooltip)
                 Safe(RegisterSettingsPage)
@@ -313,6 +325,8 @@ events:SetScript("OnEvent", function(_, event, arg1)
     if event == "PLAYER_LOGIN" then
         Safe(ApplyPosition)
         Safe(Refresh, true)
+        Safe(UpdateProvider)
+        Safe(StartLauncher)
         StartPolling()
         if not db.locked then
             Print("drag the legend where you want it, then type /clg lock. /clg for settings.")
@@ -321,6 +335,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
         Render()
         RefreshUnitTooltip()
     elseif event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+        Safe(Refresh, false)        -- an own binding may have a rule for in or out of combat
         Render()
     elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ENTERING_WORLD" then
         Safe(Refresh, false)

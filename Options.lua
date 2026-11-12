@@ -66,9 +66,9 @@ local OPTIONS = {
         { kind = "toggle", key = "locked", text = "Lock position",
           tip = "Unlock to drag the legend, then lock it again. While unlocked, hovering an icon names its binding." },
         { kind = "choice", key = "source", text = "Bindings from",
-          values = { auto = "Automatic", eui = "EllesmereUI HoverCast", clique = "Clique", vuhdo = "VuhDo",
-                     healbot = "HealBot", blizzard = "Game click casting" },
-          order = { "auto", "eui", "clique", "vuhdo", "healbot", "blizzard" },
+          values = { auto = "Automatic", own = "ClickLegend", eui = "EllesmereUI HoverCast", clique = "Clique",
+                     vuhdo = "VuhDo", healbot = "HealBot", blizzard = "Game click casting" },
+          order = { "auto", "own", "eui", "clique", "vuhdo", "healbot", "blizzard" },
           tip = "Automatic uses the first of these that has bindings, in this order. "
               .. "Pick one when you have more than one set up." },
         { kind = "choice", key = "visibility", text = "Visible",
@@ -108,6 +108,8 @@ local OPTIONS = {
         { kind = "toggle", key = "tooltipWorld", text = "Also on units in the world",
           tip = "Adds the bindings to tooltips of units you hover in the world, not only unit frames." },
         { header = "SETTINGS" },
+        { kind = "toggle", key = "minimap", text = "Minimap button",
+          tip = "A button on the minimap: click for the settings, right click for the guided setup, drag to move it." },
         { kind = "toggle", text = "Separate settings for this character",
           tip = "Off: every character shares one set of settings. On: this character keeps its own, starting as a copy.",
           get = function() return type(ClickLegendCharDB) == "table" and ClickLegendCharDB.enabled == true end,
@@ -176,7 +178,28 @@ OPTIONS.Share = {
     { header = "IMPORT / EXPORT" },
     { kind = "button", text = "Open import and export", click = function() OpenShareTab() end },
 }
-local PANEL_PAGES = { "Display", "Look", "Order", "Share" }
+-- The Bindings page: ClickLegend's own click casting. The keys and their
+-- rules are edited in the addon's own window; the EllesmereUI panel gets the
+-- switches and a button that opens it.
+local function OpenBindingsTab() ns.OpenBindingsTab() end     -- Window.lua
+local function CastOn() local s = ns.CastSettings(); return s and s.enabled end
+local function CastFrames(group) local s = ns.CastSettings(); return s and s.frames[group] end
+
+OPTIONS.Bindings = {
+    { header = "CLICK CASTING" },
+    { kind = "toggle", text = "Use ClickLegend's own click casting",
+      tip = "On: clicks and keys on unit frames cast the bindings you set up in ClickLegend. "
+          .. "Off: ClickLegend only shows bindings and changes nothing.",
+      get = CastOn, set = function(v) ns.SetCastEnabled(v) end },
+    { kind = "toggle", text = "On the game's unit frames",
+      get = function() return CastFrames("blizzard") end, set = function(v) ns.SetCastFrames("blizzard", v) end },
+    { kind = "toggle", text = "On other addons' unit frames",
+      tip = "Unit frames from other addons that offer themselves for click casting, EllesmereUI's among them.",
+      get = function() return CastFrames("registered") end, set = function(v) ns.SetCastFrames("registered", v) end },
+    { header = "KEYS" },
+    { kind = "button", text = "Open the binding editor", click = function() OpenBindingsTab() end },
+}
+local PANEL_PAGES = { "Display", "Look", "Order", "Bindings", "Share" }
 
 local function RefreshWindow() ns.RefreshWindow() end     -- Window.lua
 

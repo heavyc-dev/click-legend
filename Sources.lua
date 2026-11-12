@@ -445,9 +445,10 @@ local function CollectVuhDoLayers()
 end
 
 --  HealBot ------------------------------------------------------------------
---  HealBot_Config_Spells.EnabledKeyCombo["ShiftLeft1"] = "S:774": the key is
---  modifier + button + talent spec number, the value a spell id ("S:"), an
---  item id ("I:"), a HealBot command ("C:"), an emote ("E:") or plain text.
+--  HealBot_Config_Spells.EnabledKeyCombo["ShiftLeft1"] = "S:774^Rejuvenation":
+--  the key is modifier + button + talent spec number, the value a spell id and
+--  name ("S:", the name missing in older saves), an item id ("I:"), a HealBot
+--  command ("C:"), an emote ("E:") or plain text.
 --  EnemyKeyCombo is the same for hostile units.
 local HEALBOT_MODS = {
     { "Alt-Ctrl-Shift", "ALT-CTRL-SHIFT-" }, { "Alt-Shift", "ALT-SHIFT-" }, { "Ctrl-Shift", "CTRL-SHIFT-" },
@@ -487,9 +488,10 @@ local function HealBotEntry(value, side)
     if type(value) ~= "string" or value == "" then return nil end
     local kind, rest = value:match("^(%u):(.+)$")
     if kind == "S" then
-        local id = tonumber(rest)
+        local idText, name = rest:match("^(%d+)%^?(.*)$")
+        local id = tonumber(idText)
         if not id then return nil end
-        return Entry(SpellName(id), SpellTexture(id), id, SpellKnown(id) == false)
+        return Entry(name ~= "" and name or SpellName(id), SpellTexture(id), id, SpellKnown(id) == false)
     elseif kind == "C" then
         local command = HEALBOT_COMMANDS[side][rest]
         return command and Entry(command[1], command[2]) or nil
@@ -536,10 +538,14 @@ end
 --  Current bindings
 -------------------------------------------------------------------------------
 
--- In the order "Automatic" tries them: an addon the player installed for
--- click casting comes before the game's own, which most profiles have
+-- In the order "Automatic" tries them: ClickLegend's own bindings when they are
+-- switched on, then an addon the player installed for click casting, then the
+-- game's own, which most profiles have
 -- something in even when it is not what they use.
+local function CollectOwnLayers() return ns.CollectOwnLayers() end      -- Cast.lua
+
 local SOURCES = {
+    { id = "own", name = "ClickLegend", collect = CollectOwnLayers },
     { id = "eui", name = "EllesmereUI HoverCast", collect = CollectEUILayers },
     { id = "clique", name = "Clique", collect = CollectCliqueLayers },
     { id = "vuhdo", name = "VuhDo", collect = CollectVuhDoLayers },
@@ -618,7 +624,20 @@ end
 -------------------------------------------------------------------------------
 --  Used by the other files
 -------------------------------------------------------------------------------
-ns.AllBoundKeys  = AllBoundKeys
-ns.CollectLayers = CollectLayers
-ns.Signatures    = Signatures
-ns.SortedMods    = SortedMods
+ns.AllBoundKeys     = AllBoundKeys
+ns.CollectBlizzardLayers = CollectBlizzardLayers
+ns.CollectLayers    = CollectLayers
+ns.CurrentSpecID    = CurrentSpecID
+ns.Entry            = Entry
+ns.InventoryTexture = InventoryTexture
+ns.MacroInfo        = MacroInfo
+ns.PutEntry         = PutEntry
+ns.Signatures       = Signatures
+ns.SortedMods       = SortedMods
+ns.SpellIDFor       = SpellIDFor
+ns.SpellKnown       = SpellKnown
+ns.SpellName        = SpellName
+ns.SpellTexture     = SpellTexture
+ns.TYPE_ICON        = TYPE_ICON
+ns.TYPE_NAME        = TYPE_NAME
+ns.ValidIcon        = ValidIcon

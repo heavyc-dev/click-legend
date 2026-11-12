@@ -31,7 +31,15 @@ local ResetSettings, SetColor, SetCustomPosition =
 --  templates), so it works on any client, with or without EllesmereUI.
 -------------------------------------------------------------------------------
 local window                    -- created on first open
-local ToggleWindow, RefreshWindow, OpenShareTab
+local ToggleWindow, RefreshWindow, OpenShareTab, OpenBindingsTab
+-- Things that sit on top of the window and must not outlive it: an open
+-- drop-down list (Picker.lua) and the guided setup (Wizard.lua).
+local function CloseOverlays()
+    if ns.CloseMenu then ns.CloseMenu() end
+    if ns.CloseWizard then ns.CloseWizard() end
+end
+local function GetEditor(parent, width) return ns.GetEditor(parent, width) end     -- Editor.lua
+local function RefreshEditor() ns.RefreshEditor() end                              -- Editor.lua
 
 local WIN_W, WIN_H, ROW_H, WIN_PAD = 400, 520, 26, 16
 local activeTab = "Display"
@@ -243,13 +251,15 @@ local function BuildWindow()
 
     local close = NewButton(f, 22, 22, "X")
     close:SetPoint("TOPRIGHT", -8, -8)
-    close:SetScript("OnClick", function() f:Hide() end)
+    close:SetScript("OnClick", function() f:Hide(); CloseOverlays() end)
+    f:SetScript("OnHide", CloseOverlays)             -- Escape closes the window too
 
     f.tabs = {}
     for i, name in ipairs(PANEL_PAGES) do
-        local tab = NewButton(f, 88, 22, name)
-        tab:SetPoint("TOPLEFT", WIN_PAD + (i - 1) * 93, -40)
+        local tab = NewButton(f, 70, 22, name)
+        tab:SetPoint("TOPLEFT", WIN_PAD + (i - 1) * 74, -40)
         tab:SetScript("OnClick", function()
+            CloseOverlays()
             activeTab = name
             f.scroll:SetVerticalScroll(0)
             RefreshWindow()
@@ -349,9 +359,18 @@ local function BuildWindow()
     Note("To share a setup: Export, copy the text, and send it. To use one: paste it into the box "
         .. "with Ctrl+V and press Import. Import replaces the settings in use, including the position.", -206)
 
+    -- Bindings tab: ClickLegend's own click casting. Editor.lua fills it on
+    -- first use.
+    local bindings = CreateFrame("Frame", nil, f)
+    bindings:SetPoint("TOPLEFT", WIN_PAD, -72)
+    bindings:SetPoint("BOTTOMRIGHT", -WIN_PAD, 14)
+    bindings:Hide()
+    f.bindings = bindings
+
     local reset = NewButton(f, 110, 24, "Reset to defaults")
     reset:SetPoint("BOTTOMLEFT", WIN_PAD, 14)
     reset:SetScript("OnClick", function() if db then ResetSettings() end end)
+    f.reset = reset
     f.hint = NewText(f, 10, 0.6, 0.6, 0.6)
     f.hint:SetPoint("BOTTOMRIGHT", -WIN_PAD, 20)
     f.hint:SetText("Shift-click + or - for bigger steps")
@@ -409,7 +428,13 @@ local function RefreshWindowNow()
     if (f.scroll:GetVerticalScroll() or 0) > range then f.scroll:SetVerticalScroll(range) end
     f.hint:SetShown(activeTab == "Display" or activeTab == "Look")
     f.share:SetShown(activeTab == "Share")
-    f.scroll:SetShown(activeTab ~= "Share")
+    f.scroll:SetShown(activeTab ~= "Share" and activeTab ~= "Bindings")
+    f.reset:SetShown(activeTab ~= "Bindings")        -- it resets the display settings, not bindings
+    f.bindings:SetShown(activeTab == "Bindings")
+    if activeTab == "Bindings" then
+        GetEditor(f.bindings, WIN_W - WIN_PAD * 2):Show()
+        RefreshEditor()
+    end
 end
 
 RefreshWindow = function()
@@ -426,6 +451,7 @@ ToggleWindow = function(forceOpen)
     end
     if window:IsShown() and not forceOpen then
         window:Hide()
+        CloseOverlays()
         return
     end
     window:Show()
@@ -435,6 +461,17 @@ end
 OpenShareTab = function()
     activeTab = "Share"
     ToggleWindow(true)
+end
+
+OpenBindingsTab = function()
+    activeTab = "Bindings"
+    ToggleWindow(true)
+end
+
+-- The Bindings tab with the guided setup open on top of it.
+local function OpenGuidedSetup()
+    OpenBindingsTab()
+    if window and window:IsShown() then ns.OpenWizard(window.bindings, WIN_W - WIN_PAD * 2) end     -- Wizard.lua
 end
 
 -- An entry in the game's own AddOns options list that opens the window.
@@ -457,6 +494,10 @@ function ns.GetWindow() return window end
 -------------------------------------------------------------------------------
 --  Used by the other files
 -------------------------------------------------------------------------------
+ns.NewButton           = NewButton
+ns.NewText             = NewText
+ns.OpenBindingsTab     = OpenBindingsTab
+ns.OpenGuidedSetup     = OpenGuidedSetup
 ns.OpenShareTab        = OpenShareTab
 ns.RefreshWindow       = RefreshWindow
 ns.RegisterGameOptions = RegisterGameOptions

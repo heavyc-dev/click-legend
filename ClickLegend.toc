@@ -1,18 +1,26 @@
 ## Interface: 16001
 ## Title: ClickLegend
-## Notes: Shows your click-cast bindings as an on-screen icon legend (ally and enemy spells for every bound key or button) and in unit tooltips. Reads EllesmereUI HoverCast, Clique, VuhDo, HealBot and the game's own Click Casting.
+## Notes: Better click casting for the default raid frames or any frames that support it: rules per key (dead ally, ally, enemy), spells picked from lists, no macros. Shows every binding on screen. Type /clg.
 ## Author: Heavy C Dev
 ## Version: @project-version@
+## IconTexture: Interface\AddOns\ClickLegend\ClickLegend-Logo.png
 ## OptionalDeps: EllesmereUI, EllesmereUIRaidFrames, Clique, VuhDo, HealBot
-## SavedVariables: ClickLegendDB
+## SavedVariables: ClickLegendDB, ClickLegendCastDB
 ## SavedVariablesPerCharacter: ClickLegendCharDB
 ## X-License: MIT
 ## X-Curse-Project-ID: 1799862
 
 Core.lua
 Sources.lua
+Cast.lua
+Templates.lua
+Provider.lua
 Display.lua
 Tooltip.lua
 Options.lua
 Window.lua
+Picker.lua
+Editor.lua
+Wizard.lua
+Launcher.lua
 Commands.lua

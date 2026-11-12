@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.0.0
+- ClickLegend can now do the click casting itself. It is off until you switch it on (Bindings tab, or `/clg cast on`); with it off, nothing changes from 1.6.0 and no unit frame is touched.
+- Rules instead of one spell per key. Each key has a short list of rules and the first one that fits is cast: for example dead ally, then ally, then enemy, all on Shift + Left Click. No macros to write.
+- Conditions: ally or enemy, alive or dead, in or out of combat, your stance or form, with or without a pet, an extra modifier. A rule whose spell you do not know is skipped, so the next rule takes over.
+- Binds mouse buttons, the mouse wheel and keyboard keys, with any modifiers. Keys and the wheel act only while the cursor is on a unit frame.
+- What a rule can do: a spell (the highest rank you know, or one exact rank), an item, a trinket, one of your macros, target, focus, assist, or the unit menu.
+- Binding sets are shared by all your characters: make one, copy it, pick which one a character uses.
+- Starter sets for every class (healer and damage or tank versions for priest, paladin, druid and shaman). The most used spells are on the plain clicks, then Shift, Ctrl and Alt. They list the better spell first and the one it replaces after it, so the same set works at any level and with any talents.
+- Guided setup: pick which buttons you want (left, right, middle, wheel up and down, any extra mouse buttons, which you add by clicking them, and keyboard keys, which you add by pressing them), each plain or with Shift, Ctrl or Alt. It then asks, for those only, what each should do on an ally, a dead ally and an enemy.
+- Export a binding set as text and import one someone sent you.
+- New Bindings tab in the settings window: pick spells, macros and items from searchable lists, press the key you want to bind. The EllesmereUI panel gets a Bindings page too.
+- The legend follows the rules: it shows what each key would do right now, such as the resurrection while the cursor is on a dead ally.
+- A minimap button (click: settings, right click: guided setup; it can be hidden) and a welcome window the first time, offering the guided setup or the settings.
+- Works on the game's own unit frames and on frames other addons offer for click casting: EllesmereUI's when its HoverCast is off, ElvUI's, Grid2's, and VuhDo's when its Clique Support option is ticked.
+- Fixed: spells bound in current versions of HealBot were missing from the legend.
+- Warns when EllesmereUI HoverCast, Clique or the game's own Click Casting is binding the same frames or the same key. It never changes their bindings.
+- Nothing is changed on a frame during combat; changes made in combat apply when it ends.
+
 ## 1.6.0
 - Reads bindings from Clique, VuhDo and HealBot, as well as EllesmereUI HoverCast and the game's own click casting.
 - New "Bindings from" setting: Automatic (the first source that has bindings) or one source of your choice. Also `/clg source`.
