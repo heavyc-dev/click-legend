@@ -5,7 +5,7 @@
 -------------------------------------------------------------------------------
 local _, ns = ...
 
-local ipairs, type, tonumber, pcall = ipairs, type, tonumber, pcall
+local ipairs, pairs, type, tonumber, tostring, pcall = ipairs, pairs, type, tonumber, tostring, pcall
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 
 -- The bindings on screen, and the signatures they were last drawn from.
@@ -21,6 +21,8 @@ local POINTS, Report, Safe, ShortKey, CollectLayers =
     ns.POINTS, ns.Report, ns.Safe, ns.ShortKey, ns.CollectLayers
 local Signatures, SortedMods =
     ns.Signatures, ns.SortedMods
+local MOUSE = ns.MOUSE_LAYOUTS                  -- MouseLayout.lua: the pictures and where their buttons are
+local SideKeys = ns.SideKeys                    -- Cast.lua: what a block of side buttons sends
 
 -------------------------------------------------------------------------------
 --  Display
@@ -87,6 +89,7 @@ layerText:SetPoint("RIGHT", panel, "LEFT", -6, 0)
 
 -- Pools of drawn pieces, reused on every render.
 local bars, cells, labels, glyphs, captions = {}, {}, {}, {}, {}
+local mice, lines = {}, {}                      -- the "Mouse picture" layout: the pictures, the lines to the icons
 
 -- EllesmereUI's own font and outline when it can be read, the game font
 -- otherwise. Looked up once per render (ResolveFont), then reused for every
@@ -220,6 +223,7 @@ local function ShowCellTooltip(cell)
     if entry.missing then
         GameTooltip:AddLine("Not available: the spell is not learned or the macro is gone.", 0.9, 0.3, 0.3, true)
     end
+    if ownSource then GameTooltip:AddLine("Click to change what this key does.", 0.6, 0.6, 0.6) end
     GameTooltip:Show()
 end
 
@@ -234,10 +238,38 @@ local function GetCell(i)
         cell.icon:SetPoint("TOPLEFT", 1, -1)
         cell.icon:SetPoint("BOTTOMRIGHT", -1, 1)
         cell.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        -- Over the icon: the cooldown sweep, the key in a corner (one of the
+        -- label styles), the rank of a spell bound to one exact rank, and the
+        -- flash when the spell is cast.
+        local ok, sweep = pcall(CreateFrame, "Cooldown", nil, cell, "CooldownFrameTemplate")
+        if ok and sweep then
+            sweep:SetAllPoints(cell.icon)
+            if sweep.SetDrawEdge then sweep:SetDrawEdge(false) end
+            sweep:Hide()
+            cell.sweep = sweep
+        end
+        cell.over = CreateFrame("Frame", nil, cell)             -- above the sweep
+        cell.over:SetAllPoints(cell)
+        cell.over:SetFrameLevel((cell:GetFrameLevel() or 1) + 3)
+        cell.hotkey = cell.over:CreateFontString(nil, "OVERLAY")
+        cell.hotkey:SetPoint("TOPRIGHT", -1, -1)
+        cell.rank = cell.over:CreateFontString(nil, "OVERLAY")
+        cell.rank:SetPoint("BOTTOMLEFT", 2, 1)
+        cell.flash = cell.over:CreateTexture(nil, "ARTWORK")
+        cell.flash:SetAllPoints(cell.icon)
+        cell.flash:SetColorTexture(1, 1, 1, 1)
+        cell.flash:SetAlpha(0)
         -- Mouse is only enabled while unlocked; a drag on an icon moves the legend.
         cell:RegisterForDrag("LeftButton")
-        cell:SetScript("OnDragStart", DragStart)
+        cell:SetScript("OnDragStart", function() cell.dragged = true; DragStart() end)
         cell:SetScript("OnDragStop", DragStop)
+        -- A click (not a drag) on one of ClickLegend's own keys opens it in the editor.
+        cell:SetScript("OnMouseDown", function() cell.dragged = false end)
+        cell:SetScript("OnMouseUp", function(self, button)
+            if button == "LeftButton" and not self.dragged and ownSource and self.key and ns.OpenKey then
+                Safe(ns.OpenKey, (self.mods or "") .. self.key)
+            end
+        end)
         cell:SetScript("OnEnter", function(self) Safe(ShowCellTooltip, self) end)
         cell:SetScript("OnLeave", function() if GameTooltip and GameTooltip.Hide then GameTooltip:Hide() end end)
         cells[i] = cell
@@ -277,14 +309,14 @@ end
 
 -- The height the label row needs (horizontal layout) for the current style.
 local function LabelHeight()
-    if not db.labels then return 0 end
+    if not db.labels or db.labelStyle == "corner" then return 0 end
     if db.labelStyle == "icon" then return db.labelSize + 9 end
     return db.labelSize + 3
 end
 
 -- The width the label column needs (vertical layout).
 local function LabelWidth()
-    if not db.labels then return 0 end
+    if not db.labels or db.labelStyle == "corner" then return 0 end
     return db.labelSize * 3 + 7
 end
 
@@ -414,7 +446,8 @@ local function SidesFor(layer)
     local order = db.enemyFirst and { "enemy", "ally" } or { "ally", "enemy" }
     local sides = {}
     for _, side in ipairs(order) do
-        if has[side] and (db.rows == "both" or db.rows == side) then sides[#sides + 1] = side end
+        local applies = not (db.hoverDim and db.offStyle == "hide" and hover.side and side ~= hover.side)
+        if has[side] and applies and (db.rows == "both" or db.rows == side) then sides[#sides + 1] = side end
     end
     return sides
 end
@@ -431,8 +464,67 @@ local function VisibleKeys(layer, sides)
     return keys
 end
 
--- sec: the section being drawn ({ mods, alpha = function(side) }).
-local function PlaceCell(draw, sec, key, side, x, y, size, entry)
+-- Why the entry's spell cannot be cast at this moment, or false when it can:
+--   "range"     the unit under the cursor is of this row's side and out of range
+--   "mana"      not enough mana, rage or energy
+--   "cooldown"  on cooldown, longer than the global one (start and length follow)
+--   "other"     the game says it is not usable, for some other reason
+-- Anything the game will not tell (it hides some of this in combat) counts as
+-- castable.
+local function Known(v)
+    return v ~= nil and not (issecretvalue and issecretvalue(v))
+end
+
+local function CannotCast(entry, side)
+    local id = entry.spellID
+    if not (id and C_Spell) or entry.missing then return false end
+    if hover.side == side and C_Spell.IsSpellInRange then
+        local ok, inRange = pcall(C_Spell.IsSpellInRange, id, "mouseover")
+        if ok and Known(inRange) and inRange == false then return "range" end
+    end
+    if C_Spell.GetSpellCooldown then
+        local ok, info = pcall(C_Spell.GetSpellCooldown, id)
+        if ok and type(info) == "table" and not (issecretvalue and issecretvalue(info)) then
+            local start, length = info.startTime, info.duration
+            if Known(start) and Known(length) and type(start) == "number" and type(length) == "number"
+                and start > 0 and length > 1.5 then
+                return "cooldown", start, length
+            end
+        end
+    end
+    if C_Spell.IsSpellUsable then
+        local ok, usable, noPower = pcall(C_Spell.IsSpellUsable, id)
+        if ok and Known(usable) and usable == false then
+            return (Known(noPower) and noPower == true) and "mana" or "other"
+        end
+    end
+    return false
+end
+
+-- One character per spell on the legend: whether it can be cast now. The
+-- legend is redrawn when this changes.
+local function CastableSignature()
+    if not layers then return "" end
+    local parts = {}
+    for _, layer in pairs(layers) do
+        for _, slot in pairs(layer.byKey) do
+            if slot.ally and slot.ally.spellID then parts[#parts + 1] = (CannotCast(slot.ally, "ally") or "-"):sub(1, 1) end
+            if slot.enemy and slot.enemy.spellID then parts[#parts + 1] = (CannotCast(slot.enemy, "enemy") or "-"):sub(1, 1) end
+        end
+    end
+    return table.concat(parts)
+end
+
+-- How an icon looks for each reason its spell cannot be cast: red out of
+-- range, blue without the mana, grey on cooldown (under the sweep).
+local REASON_LOOK = {
+    range = { 1, 0.3, 0.3, 0.85 }, mana = { 0.4, 0.5, 1, 0.85 },
+    cooldown = { 0.6, 0.6, 0.6, 0.8 }, other = { 1, 1, 1, 0.45 },
+}
+
+-- sec: the section being drawn ({ mods, alpha = function(side) }). `keyed`:
+-- this is the cell that carries the key's name in the "On the icon" style.
+local function PlaceCell(draw, sec, key, side, x, y, size, entry, keyed)
     draw.cell = draw.cell + 1
     local cell = GetCell(draw.cell)
     local alpha = sec.alpha(side)
@@ -447,12 +539,56 @@ local function PlaceCell(draw, sec, key, side, x, y, size, entry)
         local broken = entry.missing and db.flagMissing
         if cell.icon.SetDesaturated then cell.icon:SetDesaturated(broken and true or false) end
         cell.icon:Show()
-        cell:SetAlpha(broken and alpha * 0.45 or alpha)
+        local reason, start, length = false, nil, nil
+        if not broken and db.flagUnusable then reason, start, length = CannotCast(entry, side) end
+        if reason == "range" and db.offStyle == "hide" then
+            entry = nil                     -- shown as an empty place: it will not work on this unit
+        else
+            local look = reason and REASON_LOOK[reason]
+            if cell.icon.SetVertexColor then
+                cell.icon:SetVertexColor(look and look[1] or 1, look and look[2] or 1, look and look[3] or 1)
+            end
+            cell:SetAlpha(broken and alpha * 0.45 or (look and alpha * look[4]) or alpha)
+            if cell.sweep then
+                if reason == "cooldown" then
+                    cell.sweep:SetCooldown(start, length)
+                    cell.sweep:Show()
+                else
+                    cell.sweep:Hide()
+                end
+            end
+        end
+    end
+    if entry then
+        local showKey = keyed and db.labels and db.labelStyle == "corner"
+        cell.hotkey:SetShown(showKey and true or false)
+        if showKey then
+            ApplyFont(cell.hotkey, max(6, min(db.labelSize, floor(size * 0.45))))
+            cell.hotkey:SetText(ShortKey(key))
+        end
+        cell.rank:SetShown(entry.rank ~= nil)
+        if entry.rank then
+            ApplyFont(cell.rank, max(6, min(db.labelSize, floor(size * 0.4))))
+            cell.rank:SetText(tostring(entry.rank))
+            cell.rank:SetTextColor(1, 0.82, 0)
+        end
     else
         cell.icon:Hide()                    -- empty slot keeps the grid aligned
+        cell.hotkey:Hide()
+        cell.rank:Hide()
+        if cell.sweep then cell.sweep:Hide() end
         cell:SetAlpha(0.2 * alpha)
     end
     cell:Show()
+end
+
+-- The side whose cell carries the key's name in the "On the icon" style: the
+-- first one drawn that has something bound.
+local function KeyedSide(slot, sides)
+    for _, side in ipairs(sides) do
+        if slot[side] then return side end
+    end
+    return nil
 end
 
 local function PlaceBar(draw, sec, x, y, w, h, side)
@@ -482,12 +618,13 @@ local function LayoutHorizontal(draw, sec, ox, oy)
         local block, col = floor((i - 1) / per), (i - 1) % per
         local x, y0 = ox + left + col * (size + gap), oy - block * (blockH + BLOCK_GAP)
         local slot = layer.byKey[key]
+        local keyed = KeyedSide(slot, sides)
         for r, side in ipairs(sides) do
             local y = y0 - labelH - (r - 1) * (size + gap)
             if col == 0 and db.bars then PlaceBar(draw, sec, ox, y, BAR_W, size, side) end
-            PlaceCell(draw, sec, key, side, x, y, size, slot[side])
+            PlaceCell(draw, sec, key, side, x, y, size, slot[side], side == keyed)
         end
-        if db.labels then
+        if db.labels and db.labelStyle ~= "corner" then
             PlaceLabel(draw, key, "BOTTOM", x + size / 2, y0 - labelH + 1, sec.labelAlpha)
         end
     end
@@ -508,16 +645,295 @@ local function LayoutVertical(draw, sec, ox, oy)
         local block, row = floor((i - 1) / per), (i - 1) % per
         local x0, y = ox + block * (blockW + BLOCK_GAP), oy - (top + row * (size + gap))
         local slot = layer.byKey[key]
+        local keyed = KeyedSide(slot, sides)
         for c, side in ipairs(sides) do
             local x = x0 + labelW + (c - 1) * (size + gap)
             if row == 0 and db.bars then PlaceBar(draw, sec, x, oy, size, BAR_W, side) end
-            PlaceCell(draw, sec, key, side, x, y, size, slot[side])
+            PlaceCell(draw, sec, key, side, x, y, size, slot[side], side == keyed)
         end
-        if db.labels then
+        if db.labels and db.labelStyle ~= "corner" then
             PlaceLabel(draw, key, "RIGHT", x0 + labelW - 4, y - size / 2, sec.labelAlpha)
         end
     end
     return blocks * blockW + (blocks - 1) * BLOCK_GAP, top + min(#keys, per) * (size + gap) - gap
+end
+
+-------------------------------------------------------------------------------
+--  Mouse picture: a mouse seen from above, with the spells of each button
+--  beside it and a line from the button to them. Every position comes from
+--  the points in MouseLayout.lua and the size the picture is drawn at, so it
+--  can be drawn at any size.
+--    left of the picture   the left button and the side buttons (or, on a
+--                          mouse with a block of side buttons, that block)
+--    right of it           the wheel's three keys stacked, then the right button
+--    under it              every key with no place on a mouse
+-------------------------------------------------------------------------------
+local function GetMouse(i)
+    local tex = mice[i]
+    if not tex then
+        tex = panel:CreateTexture(nil, "ARTWORK")
+        mice[i] = tex
+    end
+    return tex
+end
+
+-- One straight piece of a line, level or upright, `t` thick. Points are
+-- measured from the panel's top left, y downward.
+local function Segment(draw, x1, y1, x2, y2, t, alpha)
+    draw.line = draw.line + 1
+    local tex = lines[draw.line]
+    if not tex then
+        tex = panel:CreateTexture(nil, "BORDER")
+        lines[draw.line] = tex
+    end
+    local x, y = min(x1, x2), min(y1, y2)
+    local w, h = max(x1, x2) - x, max(y1, y2) - y
+    tex:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.8)
+    tex:ClearAllPoints()
+    if h < w then                               -- level
+        tex:SetPoint("TOPLEFT", panel, "TOPLEFT", x, -(y - t / 2))
+        tex:SetSize(w, t)
+    else                                        -- upright; the ends cover the corners
+        tex:SetPoint("TOPLEFT", panel, "TOPLEFT", x - t / 2, -(y - t / 2))
+        tex:SetSize(t, h + t)
+    end
+    tex:SetAlpha(alpha)
+    tex:Show()
+end
+
+-- Tops for the entries of one column, each as near its own height as the
+-- others allow: none overlapping, and none below `bottom` unless the column
+-- is simply too tall. Returns the top of the first.
+local function StackColumn(col, vgap, bottom)
+    table.sort(col, function(a, b) return a.order < b.order end)
+    local floorY = nil
+    for _, e in ipairs(col) do                  -- push down past the one above
+        e.top = e.want - e.h / 2
+        if floorY and e.top < floorY then e.top = floorY end
+        floorY = e.top + e.h + vgap
+    end
+    local ceilY = bottom
+    for i = #col, 1, -1 do                      -- pull up past the bottom, and past the one below
+        local e = col[i]
+        if e.top + e.h > ceilY then e.top = ceilY - e.h end
+        ceilY = e.top - vgap
+    end
+    return col[1] and col[1].top or 0
+end
+
+-- The key each region of a picture shows. A block of side buttons shows what
+-- the player's own buttons send, once the guided setup has learned that;
+-- until then they are taken to be mouse buttons 4 and up.
+local function MouseKeys(L)
+    local learned = L.grid and SideKeys() or nil
+    if not (learned and next(learned)) then return L.keys end
+    local inBlock, keys = {}, {}
+    for _, region in ipairs(L.grid.regions) do inBlock[region] = true end
+    for key, region in pairs(L.keys) do
+        if not inBlock[region] then keys[key] = region end
+    end
+    for n, key in pairs(learned) do
+        if L.grid.regions[n] then keys[key] = L.grid.regions[n] end
+    end
+    return keys
+end
+
+local function LayoutMouse(draw, sec, ox, oy)
+    local L = MOUSE[db.mousePic] or MOUSE.a
+    local keyRegion = MouseKeys(L)
+    local layer, sides = sec.layer, sec.sides
+    local size, gap = db.iconSize, db.spacing
+    local S = db.mouseSize
+    local k = S / L.size                                    -- picture units to pixels
+    local lead = max(4, floor(16 * k + 0.5))                -- the shortest a line may be
+    local thick = max(1, floor(5 * k + 0.5))
+    local barH = db.bars and 2 or 0                         -- a line in the side's colour under each icon
+    local vgap = max(2, gap) + barH
+    local groupW = #sides * (size + gap) - gap              -- the icons of one key, side by side
+    local corner = db.labels and db.labelStyle == "corner"
+    local labelW = (db.labels and not corner) and (LabelWidth() - 4) or 0
+
+    local bound = {}
+    for _, key in ipairs(sec.keys) do bound[key] = true end
+    local regionKeys = {}                                   -- region -> its bound keys, in the layer's order
+    for _, key in ipairs(sec.keys) do
+        local region = keyRegion[key]
+        if region then
+            regionKeys[region] = regionKeys[region] or {}
+            table.insert(regionKeys[region], key)
+            bound[key] = nil
+        end
+    end
+    local rest = {}                                         -- keys with no place on the picture
+    for _, key in ipairs(sec.keys) do
+        if bound[key] then rest[#rest + 1] = key end
+    end
+
+    -- The columns. Where the icons stand is fixed by the picture alone (the
+    -- outermost line start on that side, and a lead), so that binding or
+    -- unbinding a button moves nothing else.
+    local left, right = {}, {}
+    local leftEdge, rightEdge = L.size, 0
+    for _, region in ipairs(L.left) do leftEdge = min(leftEdge, L.regions[region].calloutX) end
+    for _, region in ipairs(L.right) do rightEdge = max(rightEdge, L.regions[region].calloutX) end
+    local gridCols, gridRows, gridX, gridY = 0, 0, L.size, 0
+    local gridKey = {}                                      -- region of the block -> the key it stands for
+    if L.grid then
+        for key, region in pairs(keyRegion) do gridKey[region] = key end
+        gridCols = L.grid.columns
+        gridRows = ceil(#L.grid.regions / gridCols)
+        for _, region in ipairs(L.grid.regions) do
+            local r = L.regions[region]
+            gridX, gridY = min(gridX, r.calloutX), gridY + r.cy / #L.grid.regions
+        end
+        leftEdge = min(leftEdge, gridX)
+    end
+    -- Never inside the drawing: on some mice a button's edge is within the body.
+    leftEdge, rightEdge = min(leftEdge, L.bounds[1]) * k - lead, max(rightEdge, L.bounds[3]) * k + lead
+
+    for i, region in ipairs(L.left) do
+        local keys = regionKeys[region]
+        if keys then
+            local r = L.regions[region]
+            left[#left + 1] = { order = i, keys = keys, x = r.calloutX * k, y = r.calloutY * k, want = r.calloutY * k,
+                                w = groupW, h = #keys * (size + vgap) - vgap }
+        end
+    end
+    local gridEntry
+    if L.grid then
+        local any = false
+        for _, region in ipairs(L.grid.regions) do any = any or regionKeys[region] ~= nil end
+        if any then
+            gridEntry = { order = 100, grid = true, x = gridX * k, y = gridY * k, want = gridY * k,
+                          w = gridCols * (groupW + 2 * gap) - 2 * gap, h = gridRows * (size + vgap) - vgap }
+            left[#left + 1] = gridEntry
+        end
+    end
+    -- The wheel's line goes up out of the picture and then across, so its keys
+    -- start level with that turn, above the right button's.
+    local wheelKeys, wheel = {}, L.regions[L.wheel]
+    for _, key in ipairs(L.wheelKeys) do
+        for _, has in ipairs(regionKeys[L.wheel] or {}) do
+            if has == key then wheelKeys[#wheelKeys + 1] = key end
+        end
+    end
+    local turnY = L.bounds[2] * k * 0.5                     -- half way up the clear strip above the mouse
+    if #wheelKeys > 0 then
+        local h = #wheelKeys * (size + vgap) - vgap
+        right[#right + 1] = { order = 0, wheel = true, keys = wheelKeys, x = wheel.calloutX * k, y = wheel.calloutY * k,
+                              want = turnY + h / 2, w = groupW + labelW, h = h }
+    end
+    for i, region in ipairs(L.right) do
+        local keys = regionKeys[region]
+        if keys then
+            local r = L.regions[region]
+            right[#right + 1] = { order = i, keys = keys, x = r.calloutX * k, y = r.calloutY * k, want = r.calloutY * k,
+                                  w = groupW, h = #keys * (size + vgap) - vgap }
+        end
+    end
+
+    -- Room: the picture moves right when the icons on its left need more
+    -- than its own clear margin, and down when a column starts above it.
+    local leftW, rightW = 0, 0
+    for _, e in ipairs(left) do leftW = max(leftW, e.w) end
+    for _, e in ipairs(right) do rightW = max(rightW, e.w) end
+    local topL, topR = StackColumn(left, vgap, S), StackColumn(right, vgap, S)
+    local px = #left > 0 and max(0, ceil(leftW - leftEdge)) or 0
+    local py = max(0, ceil(-min(topL, topR)))
+    local bottom = S
+    for _, col in ipairs({ left, right }) do
+        local last = col[#col]
+        if last then bottom = max(bottom, last.top + last.h + (db.bars and barH + 1 or 0)) end
+    end
+
+    -- The picture, tinted like the rest of the addon.
+    draw.mouse = draw.mouse + 1
+    local tex = GetMouse(draw.mouse)
+    tex:SetTexture(L.texture)
+    if tex.SetVertexColor then tex:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3]) end
+    tex:ClearAllPoints()
+    tex:SetPoint("TOPLEFT", panel, "TOPLEFT", ox + px, oy - py)
+    tex:SetSize(S, S)
+    tex:SetAlpha(sec.labelAlpha)
+    tex:Show()
+
+    -- Everything below is measured from the section's top left, y downward.
+    local function Line(x1, y1, x2, y2)
+        Segment(draw, ox + x1, -oy + y1, ox + x2, -oy + y2, thick, sec.labelAlpha)
+    end
+    -- From a button's edge to the icons: straight across when they are level
+    -- with it, else across, up or down, and across again.
+    local function Leader(fromX, fromY, toX, toY)
+        if toY > fromY - 1 and toY < fromY + 1 then
+            Line(fromX, fromY, toX, fromY)
+        else
+            local midX = toX + (fromX > toX and 1 or -1) * lead / 2
+            Line(fromX, fromY, midX, fromY)
+            Line(midX, fromY, midX, toY)
+            Line(midX, toY, toX, toY)
+        end
+    end
+    local function Group(key, x, y, keyed)
+        local slot = layer.byKey[key] or {}                 -- nothing bound: empty places
+        local named = KeyedSide(slot, sides)
+        for s, side in ipairs(sides) do
+            local cx = x + (s - 1) * (size + gap)
+            PlaceCell(draw, sec, key, side, ox + cx, oy - y, size, slot[side], keyed and side == named)
+            if db.bars then PlaceBar(draw, sec, ox + cx, oy - y - size - 1, size, barH, side) end
+        end
+    end
+
+    for _, e in ipairs(left) do
+        local edge = px + leftEdge                          -- the icons' right-hand side
+        local top = py + e.top
+        if e.grid then
+            -- Every place of the block is drawn, bound or not, so that a
+            -- spell's place in it says which button it is on.
+            for n, region in ipairs(L.grid.regions) do
+                local col, row = (n - 1) % gridCols, floor((n - 1) / gridCols)
+                Group(regionKeys[region] and regionKeys[region][1] or gridKey[region] or region,
+                    edge - e.w + col * (groupW + 2 * gap), top + row * (size + vgap), false)
+            end
+        else
+            for i, key in ipairs(e.keys) do
+                Group(key, edge - groupW, top + (i - 1) * (size + vgap), false)
+            end
+        end
+        Leader(px + e.x, py + e.y, edge, top + e.h / 2)
+    end
+    for _, e in ipairs(right) do
+        local edge = px + rightEdge                         -- the icons' left-hand side
+        local top = py + e.top
+        for i, key in ipairs(e.keys) do
+            local y = top + (i - 1) * (size + vgap)
+            Group(key, edge, y, e.wheel and corner)
+            if e.wheel then
+                -- Three keys share the wheel: each is named, and each gets a
+                -- short line off the upright one.
+                if db.labels and not corner then
+                    PlaceLabel(draw, key, "LEFT", ox + edge + groupW + 4, oy - (y + size / 2), sec.labelAlpha)
+                end
+                Line(edge - lead / 2, y + size / 2, edge, y + size / 2)
+            end
+        end
+        if e.wheel then
+            local busX, firstY, lastY = edge - lead / 2, top + size / 2, top + e.h - size / 2
+            Line(px + e.x, py + e.y, px + e.x, py + turnY)              -- up out of the picture
+            Line(px + e.x, py + turnY, busX, py + turnY)                -- across to the icons
+            Line(busX, min(py + turnY, firstY), busX, max(py + turnY, lastY))
+        else
+            Leader(px + e.x, py + e.y, edge, top + e.h / 2)
+        end
+    end
+
+    local w = px + max(S, #right > 0 and (rightEdge + rightW) or 0)
+    local h = py + bottom
+    if #rest > 0 then
+        local under = { layer = layer, sides = sides, keys = rest, mods = sec.mods, alpha = sec.alpha, labelAlpha = sec.labelAlpha }
+        local w2, h2 = LayoutHorizontal(draw, under, ox, oy - h - BLOCK_GAP)
+        w, h = max(w, w2), h + BLOCK_GAP + h2
+    end
+    return w, h
 end
 
 -- The "Visible" setting: always, in a group, in combat, or while a unit frame
@@ -570,6 +986,9 @@ local function BuildSections(held)
     return sections
 end
 
+local fadeIn = nil                  -- 0 to 1 while the legend fades in, nil when it is steady
+local FADE_SECONDS = 0.15
+
 local function RenderNow()
     ResolveFont()
     for _, c in ipairs(cells) do c:Hide() end
@@ -577,6 +996,8 @@ local function RenderNow()
     for _, g in ipairs(glyphs) do g:Hide() end
     for _, b in ipairs(bars) do b:Hide() end
     for _, c in ipairs(captions) do c:Hide() end
+    for _, m in ipairs(mice) do m:Hide() end
+    for _, l in ipairs(lines) do l:Hide() end
 
     local unlocked = not db.locked
     ApplyBackground(unlocked)
@@ -592,9 +1013,10 @@ local function RenderNow()
         panel:Hide()
         return
     end
+    if not panel:IsShown() then fadeIn = 0 end             -- coming back: fade in
     panel:Show()
     panel:SetScale(db.scale)
-    panel:SetAlpha(db.alpha)
+    panel:SetAlpha(db.alpha * (fadeIn or 1))
     ApplyFont(layerText, 10)
 
     if empty then
@@ -607,9 +1029,10 @@ local function RenderNow()
 
     -- Sections stack downward in the horizontal layout and sit side by side in
     -- the vertical one. A captioned section gets its modifier name on top.
-    local draw = { cell = 0, bar = 0, label = 0, glyph = 0 }
+    local draw = { cell = 0, bar = 0, label = 0, glyph = 0, mouse = 0, line = 0 }
     local vertical = db.layout == "vertical"
     local Layout = vertical and LayoutVertical or LayoutHorizontal
+    if db.layout == "mouse" and MOUSE then Layout = LayoutMouse end     -- sections stack downward, as in horizontal
     local anyCaption = false
     for _, sec in ipairs(sections) do
         if sec.caption then anyCaption = true end
@@ -694,7 +1117,20 @@ local ANCHOR_POINTS = {
     left = { "RIGHT", "LEFT", -1, 0 }, right = { "LEFT", "RIGHT", 1, 0 },
 }
 
+-- Puts the legend beside the cursor, on the chosen side.
+local function FollowCursor()
+    if not GetCursorPosition then return false end
+    local ok, cx, cy = pcall(GetCursorPosition)
+    local scale = panel.GetEffectiveScale and panel:GetEffectiveScale() or 1
+    if not ok or type(cx) ~= "number" or type(cy) ~= "number" or type(scale) ~= "number" or scale <= 0 then return false end
+    local a = ANCHOR_POINTS[db.anchorSide] or ANCHOR_POINTS.below
+    local gap = db.anchorGap + db.bgPadding + 14            -- clear of the pointer itself
+    panel:ClearAllPoints()
+    return pcall(panel.SetPoint, panel, a[1], UIParent, "BOTTOMLEFT", cx / scale + a[3] * gap, cy / scale + a[4] * gap)
+end
+
 local function AnchorTarget()
+    if db.anchor == "cursor" then return GetCursorPosition and "cursor" or nil end
     if db.anchor ~= "party" then return nil end
     for _, name in ipairs(ANCHOR_FRAMES) do
         local f = _G[name]
@@ -709,6 +1145,14 @@ end
 ApplyPosition = function()
     panel:ClearAllPoints()
     local target = AnchorTarget()
+    if target == "cursor" then
+        if FollowCursor() then
+            anchoredTo = target
+            return
+        end
+        panel:ClearAllPoints()
+        target = nil
+    end
     if target then
         local a = ANCHOR_POINTS[db.anchorSide] or ANCHOR_POINTS.below
         local gap = db.anchorGap + db.bgPadding
@@ -736,18 +1180,60 @@ end
 -- needs it, and only the cheap read: a render happens when the answer changed.
 local hoverDriver = CreateFrame("Frame")
 local hoverElapsed = 0
+local castableSig = ""
+local flashing = {}                 -- cells that are flashing now
+
+-- The spell that was just cast flashes on the legend. Matched by id, or by
+-- name: a spell bound by name casts whichever rank is the highest.
+local function SpellCast(spellID)
+    if not (db and db.flash and panel:IsShown()) or spellID == nil then return end
+    if issecretvalue and issecretvalue(spellID) then return end
+    local name
+    if C_Spell and C_Spell.GetSpellName then
+        local ok, n = pcall(C_Spell.GetSpellName, spellID)
+        name = ok and type(n) == "string" and n or nil
+    end
+    for _, cell in ipairs(cells) do
+        local entry = cell.entry
+        if type(entry) == "table" and cell:IsShown() and (entry.spellID == spellID or (name and entry.name == name)) then
+            cell.flashLeft = 0.3
+            cell.flash:SetAlpha(0.6)
+            flashing[cell] = true
+        end
+    end
+end
+
 hoverDriver:SetScript("OnUpdate", function(_, dt)
-    hoverElapsed = hoverElapsed + (dt or 0)
+    dt = dt or 0
+    if anchoredTo == "cursor" and panel:IsShown() then FollowCursor() end
+    if fadeIn and db then
+        fadeIn = fadeIn + dt / FADE_SECONDS
+        if fadeIn >= 1 then fadeIn = nil end
+        panel:SetAlpha(db.alpha * (fadeIn or 1))
+    end
+    for cell in pairs(flashing) do
+        cell.flashLeft = cell.flashLeft - dt
+        if cell.flashLeft <= 0 then
+            cell.flash:SetAlpha(0)
+            flashing[cell] = nil
+        else
+            cell.flash:SetAlpha(0.6 * cell.flashLeft / 0.3)
+        end
+    end
+    hoverElapsed = hoverElapsed + dt
     if hoverElapsed < 0.1 then return end
     hoverElapsed = 0
-    if not db or db.hidden or not (db.hoverDim or db.visibility == "hover" or ownSource) then
+    if not db or db.hidden or not (db.hoverDim or db.visibility == "hover" or ownSource or db.flagUnusable) then
         if hover.side or hover.onFrame then hover.side, hover.onFrame, hover.dead = nil, false, false end
         return
     end
-    if ReadHover() then
-        if ownSource then Safe(ns.Refresh, false) end        -- a dead unit can change what a key does
-        Render()
+    local redraw = ReadHover()
+    if redraw and ownSource then Safe(ns.Refresh, false) end        -- a dead unit can change what a key does
+    if db.flagUnusable then
+        local ok, sig = pcall(CastableSignature)
+        if not ok then Report(sig) elseif sig ~= castableSig then castableSig = sig; redraw = true end
     end
+    if redraw then Render() end
 end)
 
 -------------------------------------------------------------------------------
@@ -761,4 +1247,7 @@ ns.OverWorld     = OverWorld
 ns.Refresh       = Refresh
 ns.Render        = Render
 ns.ResolveFont   = ResolveFont
+ns.SpellCast     = SpellCast
+-- For looking at a drawing.
+ns.LegendPieces   = function() return { mice = mice, lines = lines, cells = cells, bars = bars, labels = labels, glyphs = glyphs } end
 ns.SideColor     = SideColor

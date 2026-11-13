@@ -582,7 +582,7 @@ end
 
 local function EntrySignature(entry)
     if not entry then return "" end
-    return tostring(entry.icon) .. entry.name .. (entry.missing and "!" or "")
+    return tostring(entry.icon) .. entry.name .. (entry.missing and "!" or "") .. (entry.rank or "")
 end
 
 -- Signature of everything drawn, and of the set of bound keys alone (the

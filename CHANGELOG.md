@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.1.0
+- Keys that work anywhere. A key can be set to work on any unit under the cursor (characters in the world, nameplates), not only on unit frames: edit the key and pick "Any unit under the cursor". ClickLegend then has that key all the time while its click casting is on, and warns when the game uses the key for something else. Plain left and right click stay on unit frames.
+- Quickbind: a list of your spells in the Bindings tab. Point at a spell and press a key or a mouse button, with Shift, Ctrl or Alt if you like, and the spell is on that key. Helpful spells go on allies, harmful ones on enemies, resurrections on dead allies.
+- A set for each spec: More..., "Use this set for this spec only". Other specs keep the character's set.
+- Two ready-made actions that work on any class: Dispel (the dispel you know) and Resurrect (your resurrection on a dead ally; the combat one while in combat). They are in the editor, the guided setup and Quickbind.
+- Macro text in a rule: write the macro in the editor instead of saving one in the game's macro window. It uses no macro slot.
+- Before cast: a key can stop your current cast or use a trinket just before one of its spells is cast.
+- "On press": mouse clicks on unit frames can cast as the button goes down.
+- The legend shows when a spell cannot be cast: a cooldown sweeps over its icon, not enough mana turns it blue, out of range of the unit under the cursor turns it red. `/clg usable` or the Display tab switches it off.
+- The legend can stay beside the cursor (Display, Attach to), so it is where you are about to click.
+- New "Minimal" preset: beside the cursor, only while it is on a unit frame, and only what works on that unit.
+- Spells that do not apply to the unit under the cursor can be hidden instead of dimmed.
+- New layout, "Mouse picture": a mouse seen from above with each button's spells beside it and a line to the button. Keyboard keys are listed under it. Four mice to pick from (rounded, angular, simple, and one with twelve side buttons), and its size is yours to set.
+- The guided setup asks on its first page what the legend should draw: rows of icons, or one of the mice. With the twelve-button mouse it then asks you to press each side button, so that every spell is drawn beside the right one whatever keys your mouse sends.
+- New label style: the key written on the corner of the spell icon. A spell bound to one exact rank shows the rank.
+- An icon flashes when its spell is cast, and the legend fades in instead of popping up.
+- Easier to set up. Guided setup: pick the set for your class and press "Use it and turn on": two clicks. The long way now shows every key on one page, with what it does on an ally, a dead ally and an enemy side by side, instead of one page per key, and ends with the usual options.
+- Easier to change. The Bindings tab is wider and has two halves: your keys on the left (with icons for what each casts on an ally and an enemy), the rules of the key you click on the right. A rule shows only the conditions it uses, with "+ condition" to add one. Undo takes back the last change. After you press a new key, the list of spells opens by itself. A line across the top says so when click casting is off, with a button to turn it on.
+- Quickbind has a search box, a switch for lower ranks, and an x to take a spell off its keys.
+- Click an icon on the unlocked legend to open that key in the editor.
+- Group frames made in the middle of a fight by frame addons that follow the click-cast header convention (ElvUI, Grid2 and others) are bound at once, not when combat ends. Keyboard keys and the unit menu on such a frame still start after combat, and so do the game's own raid frames.
+
 ## 2.0.0
 - ClickLegend can now do the click casting itself. It is off until you switch it on (Bindings tab, or `/clg cast on`); with it off, nothing changes from 1.6.0 and no unit frame is touched.
 - Rules instead of one spell per key. Each key has a short list of rules and the first one that fits is cast: for example dead ally, then ally, then enemy, all on Shift + Left Click. No macros to write.

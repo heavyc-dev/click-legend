@@ -42,6 +42,7 @@ local function GetEditor(parent, width) return ns.GetEditor(parent, width) end  
 local function RefreshEditor() ns.RefreshEditor() end                              -- Editor.lua
 
 local WIN_W, WIN_H, ROW_H, WIN_PAD = 400, 520, 26, 16
+local WIN_BIND_W = 680              -- the Bindings tab is wider: keys on the left, a key's rules on the right
 local activeTab = "Display"
 
 local function NewText(parent, size, r, g, b)
@@ -314,15 +315,15 @@ local function BuildWindow()
     end
     Heading("PRESETS", -4)
     for i, id in ipairs(PRESET_ORDER) do
-        local b = NewButton(share, 86, 22, PRESETS[id].name)
-        b:SetPoint("TOPLEFT", (i - 1) * 94, -24)
+        local b = NewButton(share, 70, 22, PRESETS[id].name)
+        b:SetPoint("TOPLEFT", (i - 1) * 74, -24)
         b:SetScript("OnClick", function()
             if ApplyPreset(id) then share.status:SetText(PRESETS[id].name .. " preset applied.") end
         end)
     end
     Note(PRESET_NOTE, -54)
 
-    Heading("IMPORT / EXPORT", -96)
+    Heading("IMPORT / EXPORT", -100)
     local box = CreateFrame("EditBox", nil, share)
     box:SetPoint("TOPLEFT", 0, -116)
     box:SetSize(inner, 24)
@@ -431,8 +432,9 @@ local function RefreshWindowNow()
     f.scroll:SetShown(activeTab ~= "Share" and activeTab ~= "Bindings")
     f.reset:SetShown(activeTab ~= "Bindings")        -- it resets the display settings, not bindings
     f.bindings:SetShown(activeTab == "Bindings")
+    f:SetWidth(activeTab == "Bindings" and WIN_BIND_W or WIN_W)
     if activeTab == "Bindings" then
-        GetEditor(f.bindings, WIN_W - WIN_PAD * 2):Show()
+        GetEditor(f.bindings, WIN_BIND_W - WIN_PAD * 2):Show()
         RefreshEditor()
     end
 end
@@ -471,7 +473,13 @@ end
 -- The Bindings tab with the guided setup open on top of it.
 local function OpenGuidedSetup()
     OpenBindingsTab()
-    if window and window:IsShown() then ns.OpenWizard(window.bindings, WIN_W - WIN_PAD * 2) end     -- Wizard.lua
+    if window and window:IsShown() then ns.OpenWizard(window.bindings, WIN_BIND_W - WIN_PAD * 2) end     -- Wizard.lua
+end
+
+-- The Bindings tab with one key's rules open (a click on the legend).
+local function OpenKey(keyStr)
+    OpenBindingsTab()
+    if window and window:IsShown() and ns.EditorSelectKey then ns.EditorSelectKey(keyStr) end      -- Editor.lua
 end
 
 -- An entry in the game's own AddOns options list that opens the window.
@@ -498,6 +506,7 @@ ns.NewButton           = NewButton
 ns.NewText             = NewText
 ns.OpenBindingsTab     = OpenBindingsTab
 ns.OpenGuidedSetup     = OpenGuidedSetup
+ns.OpenKey             = OpenKey
 ns.OpenShareTab        = OpenShareTab
 ns.RefreshWindow       = RefreshWindow
 ns.RegisterGameOptions = RegisterGameOptions

@@ -3,6 +3,9 @@
 --  The Bindings tab of the settings window: switch ClickLegend's own click
 --  casting on, pick or make a set, and edit its keys and their rules.
 --
+--  Two panes. Left: the keys of the set. Right: the rules of the key picked
+--  on the left, or the Quickbind list, or a few words on where to begin.
+--
 --  Screen only. Every change goes through Cast.lua (ns.CastEdit and friends),
 --  which also brings the frames and the legend up to date.
 -------------------------------------------------------------------------------
@@ -33,41 +36,61 @@ local AddSet, BuildTemplate, ExportSet, ImportSet =
     ns.AddSet, ns.BuildTemplate, ns.ExportSet, ns.ImportSet
 local ListTemplates, RuleUnavailable, RenameSet =
     ns.ListTemplates, ns.RuleUnavailable, ns.RenameSet
+local BoundKeys, PresetSpell, SetSpecOnly, SpecState =
+    ns.BoundKeys, ns.PresetSpell, ns.SetSpecOnly, ns.SpecState
+local PRE_ORDER, SetCastDown, CanUndo, Undo =
+    ns.PRE_ORDER, ns.SetCastDown, ns.CastCanUndo, ns.CastUndo
 
-local ROW_H, RULE_H = 26, 56
+local LEFT_W, GAP, TOP = 230, 12, 108           -- the keys pane, the space beside it, where the panes begin
+local ROW_H, RULE_H, QUICK_H = 24, 52, 22
 local MACRO_LIMIT = 255
+local ROOM_WARN = 200                           -- the room a key uses is only shown past this
 
--- What the condition buttons say. The key is the editor value from Cast.lua.
+-- The conditions of a rule. The key of `text` is the editor value from
+-- Cast.lua; `add` is what the condition is called in the list of ones to add.
 local CONDITIONS = {
-    { field = "reaction", tip = "Who the key is used on.",
+    { field = "reaction", add = "Ally or enemy", tip = "Who the key is used on.",
       text = { [false] = "Anyone", help = "Ally", harm = "Enemy" } },
-    { field = "dead", tip = "Whether that unit is alive. Use Dead for a resurrection on the same key.",
+    { field = "dead", add = "Alive or dead", tip = "Whether that unit is alive. Use Dead for a resurrection on the same key.",
       text = { [false] = "Any life", alive = "Alive", dead = "Dead" } },
-    { field = "combat", tip = "Whether you are in combat.",
+    { field = "combat", add = "In or out of combat", tip = "Whether you are in combat.",
       text = { [false] = "Any time", ["in"] = "In combat", out = "No combat" } },
-    { field = "form", tip = "Your stance or shapeshift form. 0 is no form.",
+    { field = "form", add = "Stance or form", tip = "Your stance or shapeshift form. 0 is no form.",
       text = { [false] = "Any form" } },
-    { field = "pet", tip = "Whether you have a pet out.",
+    { field = "pet", add = "Pet out or not", tip = "Whether you have a pet out.",
       text = { [false] = "Pet or not", pet = "Have pet", nopet = "No pet" } },
-    { field = "mod", tip = "An extra modifier held with the key, on top of the key's own.",
+    { field = "mod", add = "Extra modifier held", tip = "An extra modifier held with the key, on top of the key's own.",
       text = { [false] = "No extra", shift = "+Shift", ctrl = "+Ctrl", alt = "+Alt" } },
 }
 local KIND_TEXT = {
     spell = "Spell", item = "Item", macro = "Macro", target = "Target", focus = "Focus",
     assist = "Assist", menu = "Menu", trinket1 = "Trinket 1", trinket2 = "Trinket 2",
+    dispel = "Dispel", rez = "Resurrect", text = "Macro text",
 }
-local NAMED = { spell = true, item = true, macro = true }
+local NAMED = { spell = true, item = true, macro = true, text = true }
+local PRE_TEXT = { stop = "Stop my current cast", trinket1 = "Use trinket 1", trinket2 = "Use trinket 2" }
+local TEXT_START = "/cast [@mouseover,help] "
+local PRESET = { dispel = true, rez = true }
 local MOUSE_KEY = { LeftButton = "BUTTON1", RightButton = "BUTTON2", MiddleButton = "BUTTON3" }
 local MODIFIER_KEY = {
     LSHIFT = true, RSHIFT = true, LCTRL = true, RCTRL = true, LALT = true, RALT = true,
     LMETA = true, RMETA = true,
 }
+local ALLY_COLOR, ENEMY_COLOR = { 0.05, 0.82, 0.62 }, { 0.90, 0.25, 0.25 }
 
 local panel                     -- the tab's frame, built on first use
-local editing = nil             -- index of the key whose rules are shown, or nil for the list
-local naming = nil              -- "new" | "copy" while a set name is being typed
+local editing = nil             -- index of the key whose rules are shown, or nil
+local naming = nil              -- "new" | "copy" | ... while the text box under the set row is in use
 local capture = nil             -- "add" | "change" while waiting for a key
-local message = nil             -- one line of feedback under the set row
+local message = nil             -- one line of feedback
+local quick = false             -- true while the Quickbind list is shown
+local quickFilter = ""          -- what is typed in the Quickbind search box
+local quickRanks = false        -- lower ranks listed in Quickbind
+local hovered = nil             -- the Quickbind row under the cursor
+local writing = nil             -- index of the rule whose macro text is being written
+local openFirst = false         -- a key was just added: open the list of spells for its first rule
+local notes = {}                -- every notice, the first of which is on screen
+local confirmDelete = nil       -- name of the set the notice line is asking to delete
 
 local Refresh                   -- defined below
 
@@ -103,8 +126,8 @@ end
 --  Lists to pick from
 -------------------------------------------------------------------------------
 -- A condition's values, the one in use marked. Forms carry the character's
--- own stance or form names.
-local function ConditionItems(spec, current)
+-- own stance or form names. `adding` leaves out "does not matter".
+local function ConditionItems(spec, current, adding)
     local items, forms = {}, nil
     if spec.field == "form" then
         forms = {}
@@ -122,7 +145,9 @@ local function ConditionItems(spec, current)
                 text = "Form " .. value
             end
         end
-        if text then items[#items + 1] = { text = text, value = value, icon = icon, current = value == current } end
+        if text and not (adding and value == false) then
+            items[#items + 1] = { text = text, value = value, icon = icon, current = value == current }
+        end
     end
     return items
 end
@@ -158,7 +183,16 @@ local function ChoiceItems(kind)
     return items
 end
 
-local CHOICE_HINT = { spell = "Choose a spell", item = "Choose an item", macro = "Choose a macro" }
+local CHOICE_HINT = { spell = "Choose a spell", item = "Choose an item", macro = "Choose a macro",
+                      text = "Write the macro text" }
+
+-- The first line of a rule's macro text, for the button that opens it.
+local function FirstLine(text)
+    local line = tostring(text):match("^[^\n]*")
+    local more = #line < #text
+    if #line > 44 then line, more = line:sub(1, 44), true end
+    return line .. (more and " ..." or "")
+end
 
 local function NewScroll(parent)
     local scroll = CreateFrame("ScrollFrame", nil, parent)
@@ -187,6 +221,35 @@ local function NewEditBox(parent, w)
     return box
 end
 
+-- A line of text that never wraps, with everything it stands for in a
+-- tooltip: `lines()` returns what the tooltip lists.
+local function NewLine(parent, w, r, g, b, lines)
+    local fs = NewText(parent, 10, r, g, b)
+    fs:SetWidth(w)
+    fs:SetJustifyH("LEFT")
+    if fs.SetWordWrap then fs:SetWordWrap(false) end
+    local hit = CreateFrame("Frame", nil, parent)
+    hit:SetAllPoints(fs)
+    hit:EnableMouse(true)
+    hit:SetScript("OnEnter", function(self)
+        local all = lines()
+        if not (GameTooltip and GameTooltip.SetOwner) or #all == 0 then return end
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
+        for i, line in ipairs(all) do
+            if i == 1 then GameTooltip:SetText(line, r, g, b, 1, true) else GameTooltip:AddLine(line, r, g, b, true) end
+        end
+        GameTooltip:Show()
+    end)
+    hit:SetScript("OnLeave", function() if GameTooltip and GameTooltip.Hide then GameTooltip:Hide() end end)
+    fs.hit = hit
+    return fs
+end
+
+-- A preset in words: "Dispel: Cleanse", or that this character has none.
+local function PresetText(action)
+    return ACTION_NAME[action.type] .. ": " .. (PresetSpell(action) or "none known on this character")
+end
+
 -- A rule in words: "Ally, Dead: Rebirth". For the tooltip of a key in the list.
 local function RuleLine(rule)
     local words = {}
@@ -195,7 +258,9 @@ local function RuleLine(rule)
         if value ~= false then words[#words + 1] = spec.text[value] or ("Form " .. tostring(value)) end
     end
     local action = rule.action
-    local what = (NAMED[action.type] and not (action.name or action.spellID or action.itemID)) and "nothing chosen yet"
+    local what = (NAMED[action.type] and not (action.name or action.spellID or action.itemID or action.text)) and "nothing chosen yet"
+        or action.type == "text" and FirstLine(action.text)
+        or PRESET[action.type] and PresetText(action)
         or ActionEntry(action).name
     local rank = action.pinned and RankText(action.spellID)
     return (#words > 0 and table.concat(words, ", ") or "Anyone") .. ": " .. what .. (rank and (" (" .. rank .. " only)") or "")
@@ -223,6 +288,7 @@ local function ShowKeyTooltip(row)
             GameTooltip:AddLine(line.text, 1, 1, 1)
         end
     end
+    if binding.hover then GameTooltip:AddLine("Works on any unit under the cursor.", ACCENT[1], ACCENT[2], ACCENT[3]) end
     GameTooltip:AddLine("The first rule that fits is the one that fires.", 0.6, 0.6, 0.6)
     GameTooltip:Show()
 end
@@ -241,7 +307,10 @@ local function Captured(key)
         Say(Edit.SetKey(editing, keyStr))
     else
         local ok, result = Edit.AddBinding(keyStr)
-        if ok then editing = result end
+        if ok then
+            editing, quick = result, false
+            openFirst = true                    -- straight on to choosing its spell
+        end
         Say(ok, result)
     end
 end
@@ -256,41 +325,98 @@ end
 -------------------------------------------------------------------------------
 --  Rows
 -------------------------------------------------------------------------------
--- One key in the list: its name, what it does on an ally and on an enemy.
+-- What a key mostly does on a side: the first rule for a living unit of that
+-- side whose spell the character has; failing that, the first rule for the
+-- side at all. Nil when the key does nothing on that side.
+local function SummaryRule(binding, side)
+    local other = side == "ally" and "harm" or "help"
+    local fallback
+    for _, rule in ipairs(binding.rules) do
+        local a = rule.action
+        if rule.when.reaction ~= other and (a.name or a.text or not NAMED[a.type]) then
+            if rule.when.dead ~= true and not RuleUnavailable(rule) then return rule end
+            fallback = fallback or rule
+        end
+    end
+    return fallback
+end
+
+local function SummaryName(rule)
+    if not rule then return "-" end
+    if rule.action.type == "text" then return ACTION_NAME.text end
+    return ActionEntry(rule.action).name
+end
+
+-- An icon with a thin line under it in the side's colour.
+local function NewSideIcon(row, x, color)
+    local icon = row:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(16, 16)
+    icon:SetPoint("LEFT", x, 1)
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    local line = row:CreateTexture(nil, "ARTWORK")
+    line:SetSize(16, 2)
+    line:SetPoint("TOPLEFT", icon, "BOTTOMLEFT", 0, -1)
+    line:SetColorTexture(color[1], color[2], color[3], 1)
+    icon.line = line
+    return icon
+end
+
+local function ShowSideIcon(icon, rule)
+    if rule then
+        icon:SetTexture(ActionEntry(rule.action).icon)
+        icon:SetAlpha(1)
+        icon.line:SetAlpha(1)
+    else
+        icon:SetTexture(nil)
+        icon:SetAlpha(0)
+        icon.line:SetAlpha(0.25)
+    end
+end
+
+-- One key in the list: its name, and what it does on an ally and on an
+-- enemy as two icons. Clicking it shows its rules on the right.
 local function NewKeyRow(parent, w)
-    local row = CreateFrame("Frame", nil, parent)
+    local row = CreateFrame("Button", nil, parent)
     row:SetSize(w, ROW_H)
-    row.key = NewText(row, 12)
-    row.key:SetPoint("LEFT")
-    row.key:SetWidth(96)
+    row.sel = row:CreateTexture(nil, "BACKGROUND")
+    row.sel:SetAllPoints()
+    row.sel:SetColorTexture(0.10, 0.30, 0.25, 1)
+    row.sel:Hide()
+    row.key = NewText(row, 11)
+    row.key:SetPoint("LEFT", 4, 0)
+    row.key:SetWidth(108)
     row.key:SetJustifyH("LEFT")
-    row.what = NewText(row, 11, 0.8, 0.8, 0.8)
-    row.what:SetPoint("LEFT", 100, 0)
-    row.what:SetWidth(w - 100 - 122)
-    row.what:SetJustifyH("LEFT")
-    row:EnableMouse(true)                       -- hovering the row lists every rule of the key
-    row:SetScript("OnEnter", function(self) Safe(ShowKeyTooltip, self) end)
-    row:SetScript("OnLeave", function() if GameTooltip and GameTooltip.Hide then GameTooltip:Hide() end end)
-    row.remove = NewButton(row, 22, 20, "X")
-    row.remove:SetPoint("RIGHT")
-    row.remove:SetScript("OnClick", function()
-        if row.index then Say(Edit.RemoveBinding(row.index)) end
-    end)
-    row.edit = NewButton(row, 46, 20, "Edit")
-    row.edit:SetPoint("RIGHT", row.remove, "LEFT", -4, 0)
-    row.edit:SetScript("OnClick", function()
-        editing, message = row.index, nil
+    row.ally = NewSideIcon(row, 116, ALLY_COLOR)
+    row.enemy = NewSideIcon(row, 136, ENEMY_COLOR)
+    row.edit = row                              -- the whole row is the way in
+    row:SetScript("OnClick", function(self)
+        editing, quick, hovered, writing, message = self.index, false, nil, nil, nil
         Refresh()
     end)
-    row.down = NewButton(row, 20, 20, "v")
-    row.down:SetPoint("RIGHT", row.edit, "LEFT", -4, 0)
-    row.down:SetScript("OnClick", function()
-        if row.index then Say(Edit.MoveBinding(row.index, 1)) end
+    row:SetScript("OnEnter", function(self) Safe(ShowKeyTooltip, self) end)
+    row:SetScript("OnLeave", function() if GameTooltip and GameTooltip.Hide then GameTooltip:Hide() end end)
+    row.remove = NewButton(row, 18, 18, "X")
+    row.remove:SetPoint("RIGHT", -2, 0)
+    row.remove:SetScript("OnClick", function()
+        if not row.index then return end
+        if editing == row.index then editing = nil elseif editing and editing > row.index then editing = editing - 1 end
+        local ok, why = Edit.RemoveBinding(row.index)
+        message = ok and "Key removed. Undo brings it back." or why
+        Refresh()
     end)
-    row.up = NewButton(row, 20, 20, "^")
+    row.down = NewButton(row, 16, 18, "v")
+    row.down:SetPoint("RIGHT", row.remove, "LEFT", -3, 0)
+    row.down:SetScript("OnClick", function()
+        if not row.index then return end
+        if editing == row.index then editing = editing + 1 elseif editing == row.index + 1 then editing = row.index end
+        Say(Edit.MoveBinding(row.index, 1))
+    end)
+    row.up = NewButton(row, 16, 18, "^")
     row.up:SetPoint("RIGHT", row.down, "LEFT", -2, 0)
     row.up:SetScript("OnClick", function()
-        if row.index then Say(Edit.MoveBinding(row.index, -1)) end
+        if not row.index then return end
+        if editing == row.index then editing = editing - 1 elseif editing == row.index - 1 then editing = row.index end
+        Say(Edit.MoveBinding(row.index, -1))
     end)
     return row
 end
@@ -302,43 +428,83 @@ local function DropOnto(row)
     if Edit.SetActionFromCursor(editing, row.index, kind, a, b, c) and ClearCursor then ClearCursor() end
 end
 
--- One rule: its six conditions on the first line, what it does on the second.
+-- The list of spells, macros or items for a rule; macro text opens its box.
+local function OpenChoice(row)
+    if not (row.index and editing) then return end
+    local kind = row.kindNow
+    if kind == "text" then
+        writing, message = row.index, nil
+        Refresh()
+        return
+    end
+    if GetCursorInfo and GetCursorInfo() then Safe(DropOnto, row); return end
+    if not CHOICE_HINT[kind] then return end
+    ShowMenu(row.choice, ChoiceItems(kind), function(action)
+        Say(Edit.SetAction(editing, row.index, action))
+    end, {
+        width = 250, search = true,
+        -- A name that is not in the list (a spell not learned yet, an item in the bags).
+        typed = function(text)
+            return { text = 'Use "' .. text .. '"', value = { type = kind, name = text }, note = "typed" }
+        end,
+    })
+end
+
+-- One rule. First line: when it applies, as one small button per condition
+-- in use, and a button to add another. Second line: what it does.
 local function NewRuleRow(parent, w)
     local row = CreateFrame("Frame", nil, parent)
     row:SetSize(w, RULE_H)
     row.number = NewText(row, 11, ACCENT[1], ACCENT[2], ACCENT[3])
     row.number:SetPoint("TOPLEFT", 0, -5)
-    row.conditions = {}
-    local cw = (w - 16 - 5 * 2) / 6
+    row.conditions, row.values = {}, {}
     for i, c in ipairs(CONDITIONS) do
-        local b = NewButton(row, cw, 20)
-        b:SetPoint("TOPLEFT", 16 + (i - 1) * (cw + 2), 0)
-        ApplyFont(b.label, 10)                   -- six of these share one line
-        b.label:SetWidth(cw - 2)
+        local b = NewButton(row, 60, 20)
+        ApplyFont(b.label, 10)
         b:SetScript("OnClick", function(self)
             if not (row.index and editing) then return end
             ShowMenu(self, ConditionItems(c, row.values[c.field]), function(value)
                 Say(Edit.SetCondition(editing, row.index, c.field, value))
-            end, { width = 130 })
+            end, { width = 150 })
         end)
-        Tip(b, c.tip)
+        Tip(b, c.tip .. " Pick the first line of the list to take the condition off.")
         row.conditions[i] = b
     end
-    row.values = {}
-    row.kind = NewButton(row, 70, 20)
+    row.always = NewText(row, 10, 0.55, 0.55, 0.55)
+    row.always:SetText("Always")
+    row.addCond = NewButton(row, 82, 20, "+ condition")
+    ApplyFont(row.addCond.label, 10)
+    row.addCond.label:SetTextColor(0.6, 0.6, 0.6)
+    row.addCond:SetScript("OnClick", function(self)
+        if not (row.index and editing) then return end
+        local items = {}
+        for _, c in ipairs(CONDITIONS) do
+            if row.values[c.field] == false then items[#items + 1] = { text = c.add, value = c } end
+        end
+        ShowMenu(self, items, function(c)
+            -- Straight on to that condition's values.
+            ShowMenu(self, ConditionItems(c, false, true), function(value)
+                Say(Edit.SetCondition(editing, row.index, c.field, value))
+            end, { width = 150 })
+        end, { width = 170 })
+    end)
+    Tip(row.addCond, "When this rule applies: ally or enemy, alive or dead, in combat, in a form, with a pet, "
+        .. "with an extra modifier held. A rule with no condition always applies.")
+
+    row.kind = NewButton(row, 86, 20)
     row.kind:SetPoint("TOPLEFT", 16, -24)
     row.kind:SetScript("OnClick", function(self)
         if not (row.index and editing) then return end
         ShowMenu(self, KindItems(row.kindNow), function(kind)
             Say(Edit.SetActionType(editing, row.index, kind))
-        end, { width = 110 })
+        end, { width = 120 })
     end)
     Tip(row.kind, "What this rule does.")
 
     -- The spell, item or macro: a button showing the choice, which opens a
     -- list to search and pick from. Something dragged from the spellbook,
     -- bags or macro window can be dropped on it too.
-    local choice = NewButton(row, w - 16 - 70 - 4 - 70, 20)
+    local choice = NewButton(row, w - 16 - 86 - 4 - 64, 20)
     choice:SetPoint("LEFT", row.kind, "RIGHT", 4, 0)
     choice.icon = choice:CreateTexture(nil, "ARTWORK")
     choice.icon:SetSize(16, 16)
@@ -350,20 +516,7 @@ local function NewRuleRow(parent, w)
     choice.label:SetJustifyH("LEFT")
     choice:RegisterForDrag("LeftButton")
     choice:SetScript("OnReceiveDrag", function() Safe(DropOnto, row) end)
-    choice:SetScript("OnClick", function(self)
-        if not (row.index and editing) then return end
-        if GetCursorInfo and GetCursorInfo() then Safe(DropOnto, row); return end
-        local kind = row.kindNow
-        ShowMenu(self, ChoiceItems(kind), function(action)
-            Say(Edit.SetAction(editing, row.index, action))
-        end, {
-            width = 230, search = true,
-            -- A name that is not in the list (a spell not learned yet, an item in the bags).
-            typed = function(text)
-                return { text = 'Use "' .. text .. '"', value = { type = kind, name = text }, note = "typed" }
-            end,
-        })
-    end)
+    choice:SetScript("OnClick", function() Safe(OpenChoice, row) end)
     Tip(choice, "Click to pick from a list (type to search), or drop a spell, item or macro here. "
         .. "Picking a lower rank of a spell casts exactly that rank.")
     row.choice = choice
@@ -375,12 +528,12 @@ local function NewRuleRow(parent, w)
     row.remove:SetScript("OnClick", function()
         if row.index and editing then Say(Edit.RemoveRule(editing, row.index)) end
     end)
-    row.down = NewButton(row, 20, 20, "v")
+    row.down = NewButton(row, 18, 20, "v")
     row.down:SetPoint("RIGHT", row.remove, "LEFT", -2, 0)
     row.down:SetScript("OnClick", function()
         if row.index and editing then Say(Edit.MoveRule(editing, row.index, 1)) end
     end)
-    row.up = NewButton(row, 20, 20, "^")
+    row.up = NewButton(row, 18, 20, "^")
     row.up:SetPoint("RIGHT", row.down, "LEFT", -2, 0)
     row.up:SetScript("OnClick", function()
         if row.index and editing then Say(Edit.MoveRule(editing, row.index, -1)) end
@@ -390,13 +543,111 @@ local function NewRuleRow(parent, w)
 end
 
 -------------------------------------------------------------------------------
+--  Quickbind: the character's spells in a list. Point at one and press a
+--  key or a mouse button, with Shift, Ctrl or Alt if wanted, and that spell
+--  is on that key. The wheel scrolls the list, so wheel bindings are made
+--  with Add a key.
+-------------------------------------------------------------------------------
+local function QuickItems()
+    local items = {
+        { text = "Dispel", note = "whichever you know", action = { type = "dispel" } },
+        { text = "Resurrect", note = "the combat one in combat", action = { type = "rez" } },
+    }
+    for _, item in ipairs(items) do item.icon = ActionEntry(item.action).icon end
+    for _, spell in ipairs(ListSpells()) do
+        if quickRanks or not spell.lowRank then
+            items[#items + 1] = {
+                text = spell.name, icon = spell.icon, note = spell.lowRank and spell.rank or nil,
+                action = { type = "spell", name = spell.name, spellID = spell.id, pinned = spell.lowRank },
+            }
+        end
+    end
+    local typed = quickFilter:match("^%s*(.-)%s*$"):lower()
+    if typed == "" then return items end
+    local shown = {}
+    for _, item in ipairs(items) do
+        if item.text:lower():find(typed, 1, true) then shown[#shown + 1] = item end
+    end
+    return shown
+end
+
+local function QuickBind(item, key)
+    local mods = HeldMods()
+    if mods == "" and (key == "BUTTON1" or key == "BUTTON2") then
+        message = "Hold Shift, Ctrl or Alt to put left or right click on a spell here. "
+            .. "The plain clicks are set in the list of keys."
+        Refresh()
+        return
+    end
+    local ok, where = Edit.Quickbind(mods .. key, item.action)
+    message = ok and (KeyName(mods .. key) .. ": " .. item.text .. ", on " .. where .. ".") or where
+    Refresh()
+end
+
+-- While a row is under the cursor the keyboard is the Quickbind's; otherwise
+-- keys go on to the game as usual.
+local function PassKeys(on)
+    local keys = panel and panel.quickKeys
+    if keys and keys.SetPropagateKeyboardInput then pcall(keys.SetPropagateKeyboardInput, keys, on) end
+end
+
+local function NewQuickRow(parent, w)
+    local row = CreateFrame("Button", nil, parent)
+    row:SetSize(w, QUICK_H)
+    row.bg = row:CreateTexture(nil, "BACKGROUND")
+    row.bg:SetAllPoints()
+    row.bg:SetColorTexture(0.26, 0.28, 0.31, 1)
+    row.bg:Hide()
+    row.icon = row:CreateTexture(nil, "ARTWORK")
+    row.icon:SetSize(16, 16)
+    row.icon:SetPoint("LEFT", 3, 0)
+    row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    row.name = NewText(row, 11)
+    row.name:SetPoint("LEFT", 24, 0)
+    row.note = NewText(row, 10, 0.6, 0.6, 0.6)
+    row.note:SetPoint("LEFT", row.name, "RIGHT", 6, 0)
+    -- Takes the spell off every key it is on.
+    row.clear = NewButton(row, 16, 16, "x")
+    row.clear:SetPoint("RIGHT", -2, 0)
+    row.clear:SetScript("OnClick", function()
+        if not row.item then return end
+        local ok = Edit.RemoveAction(row.item.action)
+        message = ok and (row.item.text .. " taken off its keys. Undo brings it back.") or nil
+        Refresh()
+    end)
+    row.keys = NewText(row, 10, ACCENT[1], ACCENT[2], ACCENT[3])
+    row.keys:SetPoint("RIGHT", row.clear, "LEFT", -4, 0)
+    row.keys:SetWidth(140)
+    row.keys:SetJustifyH("RIGHT")
+    row:RegisterForClicks("AnyUp")
+    row:SetScript("OnEnter", function(self)
+        hovered = self
+        self.bg:Show()
+        if panel then panel.quickSearch:ClearFocus() end        -- the keys are for binding now
+        PassKeys(false)
+    end)
+    row:SetScript("OnLeave", function(self)
+        if hovered == self then hovered = nil end
+        self.bg:Hide()
+        PassKeys(true)
+    end)
+    row:SetScript("OnClick", function(self, mouse)
+        local key = MOUSE_KEY[mouse] or (type(mouse) == "string" and mouse:upper()) or nil
+        if key and self.item then Safe(QuickBind, self.item, key) end
+    end)
+    return row
+end
+
+-------------------------------------------------------------------------------
 --  Building the tab
 -------------------------------------------------------------------------------
 local function Build(parent, w)
     local f = CreateFrame("Frame", nil, parent)
     f.w = w
+    local x0, rw = LEFT_W + GAP, w - LEFT_W - GAP          -- the right pane: where it starts, how wide
+    f.rw = rw
 
-    -- Line 1: on or off.
+    -- Line 1: on or off; undo; the guided setup.
     f.enable = NewButton(f, 46, 20)
     f.enable:SetPoint("TOPLEFT", 0, 0)
     f.enable:SetScript("OnClick", function()
@@ -411,16 +662,22 @@ local function Build(parent, w)
     f.guide = NewButton(f, 96, 20, "Guided setup")
     f.guide:SetPoint("TOPRIGHT", 0, 0)
     f.guide:SetScript("OnClick", function() ns.OpenWizard(parent, w) end)      -- Wizard.lua
-    Tip(f.guide, "Goes through the usual keys one at a time and asks what each should do on an ally, "
-        .. "a dead ally and an enemy. Starts from a ready-made set for your class if you like.")
-    f.status = NewText(f, 10, 0.6, 0.6, 0.6)
-    f.status:SetPoint("BOTTOMRIGHT", 0, 0)
+    Tip(f.guide, "Start from a ready-made set for your class and switch it on in two clicks, "
+        .. "or go through your buttons and say what each should do.")
+    f.undo = NewButton(f, 60, 20, "Undo")
+    f.undo:SetPoint("RIGHT", f.guide, "LEFT", -6, 0)
+    f.undo:SetScript("OnClick", function()
+        local ok = Undo()
+        message = ok and "Last change undone." or nil
+        Refresh()
+    end)
+    Tip(f.undo, "Takes back the last change to this set: a key removed, a rule changed, a spell bound.")
 
     -- Line 2: the set.
     local setText = NewText(f, 12)
     setText:SetPoint("TOPLEFT", 0, -33)
     setText:SetText("Set")
-    f.set = NewButton(f, 150, 20)
+    f.set = NewButton(f, 180, 20)
     f.set:SetPoint("TOPLEFT", 30, -28)
     f.set:SetScript("OnClick", function(self)
         local _, current = ActiveSet()
@@ -432,9 +689,10 @@ local function Build(parent, w)
         ShowMenu(self, items, function(name)
             editing, message = nil, nil
             SelectSet(name)
-        end, { width = 150 })
+        end, { width = 180 })
     end)
-    Tip(f.set, "The set of bindings this character uses. Sets are shared by all your characters.")
+    Tip(f.set, "The set of bindings this character uses. Sets are shared by all your characters. "
+        .. "A spec can have a set of its own: More, Use this set for this spec only.")
     -- New: an empty set, or one that starts from a template for a class.
     f.new = NewButton(f, 60, 20, "New...")
     f.new:SetPoint("LEFT", f.set, "RIGHT", 4, 0)
@@ -473,21 +731,26 @@ local function Build(parent, w)
             table.insert(items, 2, { text = "Copy this set", value = "copy" })
             table.insert(items, 3, { text = "Export this set as text", value = "export" })
             items[#items + 1] = { text = "Delete this set", value = "delete" }
+            -- A spec can have a set of its own; the others keep the character's.
+            local specID, specName, own = SpecState()
+            if specID then
+                table.insert(items, 4, own and { text = "Use this set for every spec", value = "allspecs" }
+                    or { text = "Use this set for " .. specName .. " only", value = "onespec" })
+            end
         end
         ShowMenu(self, items, function(value)
-            message = nil
+            message, confirmDelete = nil, nil
+            if value == "onespec" or value == "allspecs" then
+                local _, specName = SpecState()
+                SetSpecOnly(value == "onespec")
+                Say(false, value == "onespec"
+                    and (specName .. " now has its own set: picking a set changes it for this spec only.")
+                    or "Every spec uses this set now.")
+                return
+            end
             if value == "delete" then
-                if f.confirmDelete ~= name then
-                    f.confirmDelete = name
-                    Say(false, "Pick Delete again to remove the set " .. name .. " for every character.")
-                    return
-                end
-                f.confirmDelete = nil
-                DeleteSet(name)
-                editing = nil
-                local names = SetNames()
-                if names[1] then SelectSet(names[1]) else CastChanged() end
-                Say(true)
+                confirmDelete = name              -- asked on the notice line, with its own two buttons
+                Refresh()
                 return
             end
             naming = value
@@ -500,8 +763,12 @@ local function Build(parent, w)
                 f.nameBox:HighlightText()
             end
             f.nameBox:SetFocus()
-        end, { width = 190 })
+        end, { width = 230 })
     end)
+    Tip(f.more, "Rename, copy, share or delete this set, bring one in from text, or give this spec a set of its own.")
+    f.setNote = NewText(f, 10, 0.6, 0.6, 0.6)
+    f.setNote:SetPoint("LEFT", f.more, "RIGHT", 10, 0)
+    f.setNote:SetText("A set holds your keys. All your characters can use it.")
 
     -- A text box that takes the place of line 3 while it is needed: a name for
     -- a new set or a copy, the text of an export, or the text to import.
@@ -548,74 +815,262 @@ local function Build(parent, w)
     f.nameBox:SetScript("OnEnterPressed", NameDone)
     f.nameBox:SetScript("OnEscapePressed", function() NameClose(); Refresh() end)
 
-    -- Line 3: which frames.
+    -- Line 3: which frames, and when a click acts.
     f.blizzard = NewButton(f, 46, 20)
     f.blizzard:SetPoint("TOPLEFT", 0, -56)
     f.blizzard:SetScript("OnClick", function()
         local settings = CastSettings()
         if settings then SetCastFrames("blizzard", not settings.frames.blizzard) end
     end)
+    Tip(f.blizzard, "The game's own unit frames: party, raid, player, target, focus, pet, boss.")
     f.blizzardText = NewText(f, 11)
     f.blizzardText:SetPoint("LEFT", f.blizzard, "RIGHT", 6, 0)
-    f.blizzardText:SetText("Game's unit frames")
+    f.blizzardText:SetText("The game's unit frames")
     f.registered = NewButton(f, 46, 20)
-    f.registered:SetPoint("TOPLEFT", w / 2, -56)
+    f.registered:SetPoint("TOPLEFT", w / 3, -56)
     f.registered:SetScript("OnClick", function()
         local settings = CastSettings()
         if settings then SetCastFrames("registered", not settings.frames.registered) end
     end)
-    Tip(f.registered, "Unit frames from other addons that offer themselves for click casting, EllesmereUI's among them.")
+    Tip(f.registered, "Unit frames from other addons that offer themselves for click casting: EllesmereUI, ElvUI and Grid2 among them.")
     f.registeredText = NewText(f, 11)
     f.registeredText:SetPoint("LEFT", f.registered, "RIGHT", 6, 0)
-    f.registeredText:SetText("Other addons' frames")
-
-    -- Feedback and warnings.
-    f.notice = NewText(f, 10, 0.95, 0.55, 0.3)
-    f.notice:SetPoint("TOPLEFT", 0, -82)
-    f.notice:SetWidth(w)
-    f.notice:SetJustifyH("LEFT")
-
-    -- The list of keys.
-    f.listHead = NewText(f, 11, ACCENT[1], ACCENT[2], ACCENT[3])
-    f.listHead:SetPoint("TOPLEFT", 0, -124)
-    f.add = NewButton(f, 170, 20)
-    f.add:SetPoint("TOPRIGHT", 0, -119)
-    f.add:SetScript("OnClick", function()
-        if capture then Captured(nil) else StartCapture(editing and "change" or "add") end
+    f.registeredText:SetText("Other addons' unit frames")
+    f.down = NewButton(f, 46, 20)
+    f.down:SetPoint("TOPLEFT", 2 * w / 3, -56)
+    f.down:SetScript("OnClick", function()
+        local settings = CastSettings()
+        if settings then SetCastDown(not settings.down) end
     end)
-    f.back = NewButton(f, 50, 20, "Back")
-    f.back:SetPoint("RIGHT", f.add, "LEFT", -4, 0)
-    f.back:SetScript("OnClick", function() editing, message = nil, nil; Refresh() end)
+    Tip(f.down, "On: a mouse click on a unit frame casts as the button goes down. Off: when it is let go, "
+        .. "as the game does. Keyboard keys follow the game's own Cast on Key Down setting.")
+    f.downText = NewText(f, 11)
+    f.downText:SetPoint("LEFT", f.down, "RIGHT", 6, 0)
+    f.downText:SetText("Cast as the button goes down")
 
+    -- One line for whatever needs saying: a question with its two buttons,
+    -- that click casting is off, or the first notice (the rest in its tooltip).
+    f.notice = NewLine(f, w - 190, 0.95, 0.55, 0.3, function() return notes end)
+    f.notice:SetPoint("TOPLEFT", 0, -86)
+    f.bannerNo = NewButton(f, 70, 20)
+    f.bannerNo:SetPoint("TOPRIGHT", 0, -82)
+    f.bannerYes = NewButton(f, 90, 20)
+    f.bannerYes:SetPoint("RIGHT", f.bannerNo, "LEFT", -4, 0)
+    f.bannerYes.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
+    f.bannerYes:SetScript("OnClick", function()
+        local name = confirmDelete
+        if name then
+            confirmDelete, message = nil, nil
+            DeleteSet(name)
+            editing = nil
+            local names = SetNames()
+            if names[1] then SelectSet(names[1]) else CastChanged() end
+            Say(false, "The set " .. name .. " is deleted.")
+        else
+            message = nil
+            SetCastEnabled(true)
+        end
+    end)
+    f.bannerNo:SetScript("OnClick", function()
+        confirmDelete = nil
+        Refresh()
+    end)
+
+    -- Left pane: the keys.
+    f.listHead = NewText(f, 11, ACCENT[1], ACCENT[2], ACCENT[3])
+    f.listHead:SetPoint("TOPLEFT", 0, -TOP - 5)
+    f.listHead:SetText("KEYS")
+    f.quick = NewButton(f, 72, 20, "Quickbind")
+    f.quick:SetPoint("TOPLEFT", LEFT_W - 72, -TOP)
+    f.quick:SetScript("OnClick", function()
+        if capture then Captured(nil) end
+        quick, editing, writing, message = true, nil, nil, nil
+        Refresh()
+    end)
+    Tip(f.quick, "Lists your spells. Point at one and press a key or a mouse button, with Shift, Ctrl or Alt "
+        .. "if you like, and the spell is on that key.")
+    f.add = NewButton(f, 108, 20)
+    f.add:SetPoint("RIGHT", f.quick, "LEFT", -4, 0)
+    f.add:SetScript("OnClick", function()
+        if capture then Captured(nil) else StartCapture("add") end
+    end)
+    Tip(f.add, "Press this, then the key or mouse button you want to bind, holding Shift, Ctrl or Alt if you want them.")
     f.listScroll, f.listContent = NewScroll(f)
-    f.listScroll:SetPoint("TOPLEFT", 0, -146)
-    f.listScroll:SetPoint("BOTTOMRIGHT", 0, 14)
-    f.listContent:SetSize(w, 10)
+    f.listScroll:SetPoint("TOPLEFT", 0, -TOP - 26)
+    f.listScroll:SetPoint("BOTTOMLEFT", 0, 14)
+    f.listScroll:SetWidth(LEFT_W)
+    f.listContent:SetSize(LEFT_W, 10)
     f.keyRows = {}
     f.empty = NewText(f, 11, 0.6, 0.6, 0.6)
-    f.empty:SetPoint("TOPLEFT", 0, -150)
-    f.empty:SetWidth(w)
+    f.empty:SetPoint("TOPLEFT", 0, -TOP - 30)
+    f.empty:SetWidth(LEFT_W)
     f.empty:SetJustifyH("LEFT")
+    local divider = f:CreateTexture(nil, "ARTWORK")
+    divider:SetPoint("TOPLEFT", LEFT_W + GAP / 2, -TOP)
+    divider:SetPoint("BOTTOMLEFT", LEFT_W + GAP / 2, 14)
+    divider:SetWidth(1)
+    divider:SetColorTexture(0.2, 0.21, 0.23, 1)
 
-    -- One key's rules.
+    -- Right pane: its heading, and the button that goes with what it shows.
+    f.paneHead = NewText(f, 11, ACCENT[1], ACCENT[2], ACCENT[3])
+    f.paneHead:SetPoint("TOPLEFT", x0, -TOP - 5)
+    f.change = NewButton(f, 150, 20)
+    f.change:SetPoint("TOPRIGHT", 0, -TOP)
+    f.change:SetScript("OnClick", function()
+        if capture then Captured(nil) elseif editing then StartCapture("change") end
+    end)
+    f.back = NewButton(f, 60, 20, "Close")
+    f.back:SetPoint("TOPRIGHT", 0, -TOP)
+    f.back:SetScript("OnClick", function()
+        editing, quick, hovered, writing, message = nil, false, nil, nil, nil
+        Refresh()
+    end)
+    f.hint = NewText(f, 11, 0.6, 0.6, 0.6)
+    f.hint:SetPoint("TOPLEFT", x0, -TOP - 30)
+    f.hint:SetWidth(rw)
+    f.hint:SetJustifyH("LEFT")
+
+    -- Right pane, Quickbind: a search box, a switch for lower ranks, the
+    -- spells, and a frame that hears the keyboard while a spell is under the
+    -- cursor.
+    f.quickSearch = NewEditBox(f, rw - 130)
+    f.quickSearch:SetPoint("TOPLEFT", x0, -TOP - 26)
+    f.quickSearch:SetScript("OnTextChanged", function(self)
+        local text = self:GetText() or ""
+        if text ~= quickFilter then quickFilter = text; Refresh() end
+    end)
+    f.quickSearchHint = NewText(f, 10, 0.5, 0.5, 0.5)
+    f.quickSearchHint:SetPoint("LEFT", f.quickSearch, "LEFT", 6, 0)
+    f.quickSearchHint:SetText("Type to search your spells")
+    f.quickRanks = NewButton(f, 122, 20)
+    f.quickRanks:SetPoint("TOPRIGHT", 0, -TOP - 26)
+    f.quickRanks:SetScript("OnClick", function()
+        quickRanks = not quickRanks
+        Refresh()
+    end)
+    Tip(f.quickRanks, "Lists the lower ranks of your spells too. A lower rank put on a key casts exactly that rank.")
+    f.quickScroll, f.quickContent = NewScroll(f)
+    f.quickScroll:SetPoint("TOPLEFT", x0, -TOP - 52)
+    f.quickScroll:SetPoint("BOTTOMRIGHT", 0, 14)
+    f.quickContent:SetSize(rw, 10)
+    f.quickRows = {}
+    f.quickKeys = CreateFrame("Frame", nil, f)
+    f.quickKeys:SetAllPoints(f)
+    f.quickKeys:EnableMouse(false)
+    f.quickKeys:EnableKeyboard(true)
+    f.quickKeys:Hide()
+    f.quickKeys:SetScript("OnKeyDown", function(_, key)
+        local row = hovered
+        if not (row and row.item) then return end
+        if key == "ESCAPE" then
+            quick, hovered, message = false, nil, nil
+            Refresh()
+        elseif not MODIFIER_KEY[key] then
+            Safe(QuickBind, row.item, key)
+        end
+    end)
+
+    -- Right pane, one key's rules.
     f.ruleScroll, f.ruleContent = NewScroll(f)
-    f.ruleScroll:SetPoint("TOPLEFT", 0, -146)
-    f.ruleScroll:SetPoint("BOTTOMRIGHT", 0, 44)
-    f.ruleContent:SetSize(w, 10)
+    f.ruleScroll:SetPoint("TOPLEFT", x0, -TOP - 26)
+    f.ruleScroll:SetPoint("BOTTOMRIGHT", 0, 64)
+    f.ruleContent:SetSize(rw, 10)
     f.ruleRows = {}
-    f.addRule = NewButton(f, 80, 20, "Add a rule")
-    f.addRule:SetPoint("BOTTOMLEFT", 0, 20)
+    f.addRule = NewButton(f, 84, 20, "Add a rule")
+    f.addRule:SetPoint("BOTTOMLEFT", x0, 38)
     f.addRule:SetScript("OnClick", function()
         if editing then Say(Edit.AddRule(editing)) end
     end)
     Tip(f.addRule, "Rules are tried from the top; the first that fits fires. "
         .. "A rule whose spell you do not know is skipped, so the next one takes over.")
-    f.room = NewText(f, 10, 0.6, 0.6, 0.6)
+    f.room = NewText(f, 10, 0.95, 0.55, 0.3)
     f.room:SetPoint("LEFT", f.addRule, "RIGHT", 8, 0)
-    f.problems = NewText(f, 10, 0.95, 0.4, 0.4)
-    f.problems:SetPoint("BOTTOMLEFT", 0, 0)
-    f.problems:SetWidth(w)
-    f.problems:SetJustifyH("LEFT")
+    -- Done just before one of the key's spells is cast.
+    f.pre = NewButton(f, 104, 20)
+    f.pre:SetPoint("BOTTOMRIGHT", -146, 38)
+    f.pre:SetScript("OnClick", function(self)
+        local set = ActiveSet()
+        local binding = set and editing and set.bindings[editing]
+        if not binding then return end
+        local items = {}
+        for _, what in ipairs(PRE_ORDER) do
+            local on = binding.pre and binding.pre[what] and true or false
+            items[#items + 1] = { text = PRE_TEXT[what], value = what, current = on, note = on and "on" or nil }
+        end
+        ShowMenu(self, items, function(what)
+            Say(Edit.SetPre(editing, what, not (binding.pre and binding.pre[what])))
+        end, { width = 190 })
+    end)
+    Tip(f.pre, "Done just before a spell of this key is cast: stop the cast in progress, or use a trinket. "
+        .. "Pick one to switch it on, pick it again to switch it off. It uses room in the key's "
+        .. MACRO_LIMIT .. " characters, and is left out of a key that runs one of your saved macros.")
+    -- Where the key works: on unit frames, or on anything under the cursor.
+    f.hover = NewButton(f, 142, 20)
+    f.hover:SetPoint("BOTTOMRIGHT", 0, 38)
+    f.hover:SetScript("OnClick", function(self)
+        local set = ActiveSet()
+        local binding = set and editing and set.bindings[editing]
+        if not binding then return end
+        ShowMenu(self, {
+            { text = "Unit frames only", value = false, current = not binding.hover },
+            { text = "Any unit under the cursor", value = true, current = binding.hover and true or false },
+        }, function(value) Say(Edit.SetHover(editing, value)) end, { width = 190 })
+    end)
+    Tip(f.hover, "Where this key works. Unit frames only: while the cursor is on a unit frame. "
+        .. "Any unit under the cursor: also on characters in the world and on nameplates. ClickLegend then has "
+        .. "the key all the time, so pick one you use for nothing else. Plain left and right click cannot be set this way.")
+    f.problemLines = {}
+    f.problems = NewLine(f, rw, 0.95, 0.4, 0.4, function() return f.problemLines end)
+    f.problems:SetPoint("BOTTOMLEFT", x0, 20)
+    f.status = NewText(f, 10, 0.6, 0.6, 0.6)
+    f.status:SetPoint("BOTTOMRIGHT", 0, 0)
+
+    -- Writing a rule's macro text: covers the rules while it is open.
+    local writer = CreateFrame("Frame", nil, f)
+    writer:SetPoint("TOPLEFT", x0, -TOP - 26)
+    writer:SetPoint("BOTTOMRIGHT", 0, 14)
+    writer:SetFrameLevel((f:GetFrameLevel() or 1) + 10)
+    writer:EnableMouse(true)
+    writer.bg = writer:CreateTexture(nil, "BACKGROUND")
+    writer.bg:SetAllPoints()
+    writer.bg:SetColorTexture(0.10, 0.11, 0.13, 1)
+    writer.hint = NewText(writer, 10, 0.6, 0.6, 0.6)
+    writer.hint:SetPoint("TOPLEFT", 0, -2)
+    writer.hint:SetWidth(rw)
+    writer.hint:SetJustifyH("LEFT")
+    writer.hint:SetText("Macro text, run as written. Use [@mouseover] for the unit under the cursor, "
+        .. "for example /cast [@mouseover,help,nodead] Flash Heal. It runs when no earlier rule of the key has fired.")
+    writer.box = NewEditBox(writer, rw)
+    writer.box:SetPoint("TOPLEFT", 0, -34)
+    writer.box:SetPoint("BOTTOMRIGHT", 0, 28)
+    writer.box:SetMultiLine(true)
+    writer.box:SetMaxLetters(MACRO_LIMIT)
+    writer.box:SetJustifyH("LEFT")
+    writer.count = NewText(writer, 10, 0.6, 0.6, 0.6)
+    writer.count:SetPoint("BOTTOMLEFT", 0, 6)
+    writer.box:SetScript("OnTextChanged", function(self)
+        writer.count:SetText(#(self:GetText() or "") .. " of " .. MACRO_LIMIT .. " characters")
+    end)
+    writer.cancel = NewButton(writer, 60, 20, "Cancel")
+    writer.cancel:SetPoint("BOTTOMRIGHT", 0, 2)
+    writer.ok = NewButton(writer, 60, 20, "OK")
+    writer.ok:SetPoint("RIGHT", writer.cancel, "LEFT", -4, 0)
+    local function WriterClose()
+        writing = nil
+        writer.box:ClearFocus()
+        writer:Hide()
+    end
+    writer.ok:SetScript("OnClick", function()
+        local index, text = writing, writer.box:GetText()
+        WriterClose()
+        if not (editing and index) then Refresh(); return end
+        local ok = Edit.SetAction(editing, index, { type = "text", text = text })
+        Say(ok, "Type the macro text first.")
+    end)
+    writer.cancel:SetScript("OnClick", function() WriterClose(); Refresh() end)
+    writer.box:SetScript("OnEscapePressed", function() WriterClose(); Refresh() end)
+    writer:Hide()
+    f.writer = writer
 
     -- Catches the next key, click or wheel turn while a key is being picked.
     local catcher = CreateFrame("Button", nil, f)
@@ -641,40 +1096,32 @@ end
 -------------------------------------------------------------------------------
 --  Showing the current state
 -------------------------------------------------------------------------------
--- What a key mostly does on a side, for the list of keys: the first rule for
--- a living unit of that side whose spell the character has; failing that, the
--- first rule for the side at all.
-local function RuleSummary(binding, side)
-    local other = side == "ally" and "harm" or "help"
-    local fallback
-    for _, rule in ipairs(binding.rules) do
-        if rule.when.reaction ~= other and (rule.action.name or not NAMED[rule.action.type]) then
-            if rule.when.dead ~= true and not RuleUnavailable(rule) then return ActionEntry(rule.action).name end
-            fallback = fallback or rule
-        end
-    end
-    return fallback and ActionEntry(fallback.action).name or "-"
-end
-
-local function ShowList(f, set)
-    f.ruleScroll:Hide(); f.addRule:Hide(); f.room:Hide(); f.problems:Hide(); f.back:Hide()
-    for _, row in ipairs(f.ruleRows) do row:Hide() end
-    f.listScroll:Show(); f.status:Show()
-    f.listHead:SetText("KEYS")
-    f.add.label:SetText(capture and "Press a key or button (Esc)" or "Add a key")
+-- Left pane: every key of the set.
+local function ShowKeys(f, set)
     local count = set and #set.bindings or 0
     for i = 1, max(count, #f.keyRows) do
         local row = f.keyRows[i]
         local binding = set and set.bindings[i]
         if binding then
             if not row then
-                row = NewKeyRow(f.listContent, f.w)
+                row = NewKeyRow(f.listContent, LEFT_W)
                 f.keyRows[i] = row
             end
             row.index = i
             row.key:SetText(KeyName(binding.key))
-            local ally, enemy = RuleSummary(binding, "ally"), RuleSummary(binding, "enemy")
-            row.what:SetText(ally == enemy and ally or (ally .. "  /  " .. enemy))
+            if binding.hover then
+                row.key:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])       -- works anywhere
+            else
+                row.key:SetTextColor(1, 1, 1)
+            end
+            local ally, enemy = SummaryRule(binding, "ally"), SummaryRule(binding, "enemy")
+            ShowSideIcon(row.ally, ally)
+            ShowSideIcon(row.enemy, enemy)
+            local allyName, enemyName = SummaryName(ally), SummaryName(enemy)
+            -- The same in words, for the tests and anything else that reads the list.
+            row.summary = (binding.hover and "anywhere: " or "")
+                .. (allyName == enemyName and allyName or (allyName .. "  /  " .. enemyName))
+            row.sel:SetShown(editing == i)
             row.up:SetShown(i > 1)
             row.down:SetShown(i < count)
             row:ClearAllPoints()
@@ -685,47 +1132,126 @@ local function ShowList(f, set)
         end
     end
     f.listContent:SetHeight(max(10, count * ROW_H))
+    f.listScroll:SetShown(count > 0)
     f.empty:SetShown(count == 0)
-    f.empty:SetText(set and "No keys yet. Press Add a key, then press the key or mouse button to bind (hold Shift, Ctrl or Alt with it)."
-        or "Press Guided setup to be taken through it, or New... to make a set yourself. "
-            .. "A set holds the keys for one kind of character, and any of your characters can use it.")
+    f.empty:SetText(set and "No keys yet. Press Add a key, then the key or mouse button to bind (hold Shift, Ctrl or Alt with it). "
+            .. "Or use Quickbind."
+        or "Press Guided setup to be taken through it, or New... to make a set yourself.")
+    f.add:SetShown(set ~= nil)
+    f.add.label:SetText(capture == "add" and "Press it (Esc)" or "Add a key")
 end
 
+-- Right pane, nothing picked: where to begin.
+local function ShowHint(f, set)
+    f.hint:Show()
+    f.paneHead:SetText("")
+    if not set then
+        f.hint:SetText("No set yet.\n\nGuided setup (top right) makes one for your class and switches it on in two clicks.\n\n"
+            .. "Or press New... to make a set yourself, or Quickbind to put spells on keys straight away.")
+    elseif #set.bindings == 0 then
+        f.hint:SetText("This set is empty.\n\nAdd a key: press the button, then the key or mouse button.\n\n"
+            .. "Quickbind: point at a spell in a list and press the key you want it on.")
+    else
+        f.hint:SetText("Click a key on the left to see and change what it does.\n\n"
+            .. "The two icons beside a key are what it casts on an ally and on an enemy. "
+            .. "A key named in colour works on any unit under the cursor.")
+    end
+end
+
+-- Right pane, Quickbind: every spell, and the keys it is on now.
+local function ShowQuick(f)
+    f.quickScroll:Show(); f.quickKeys:Show(); f.back:Show(); f.quickSearch:Show(); f.quickRanks:Show()
+    f.quickSearchHint:SetShown(quickFilter == "")
+    f.quickRanks.label:SetText(quickRanks and "Lower ranks: shown" or "Lower ranks: hidden")
+    f.paneHead:SetText("QUICKBIND: point at a spell, press a key")
+    local items = QuickItems()
+    for i = 1, max(#items, #f.quickRows) do
+        local row, item = f.quickRows[i], items[i]
+        if item then
+            if not row then
+                row = NewQuickRow(f.quickContent, f.rw)
+                f.quickRows[i] = row
+            end
+            row.item = item
+            row.icon:SetTexture(item.icon)
+            row.name:SetText(item.text)
+            row.note:SetText(item.note or "")
+            local keys = BoundKeys(item.action)
+            row.keys:SetText(keys)
+            row.clear:SetShown(keys ~= "")
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", f.quickContent, "TOPLEFT", 0, -(i - 1) * QUICK_H)
+            row:Show()
+        elseif row then
+            row.item = nil
+            row:Hide()
+        end
+    end
+    f.quickContent:SetHeight(max(10, #items * QUICK_H))
+end
+
+-- Right pane: the rules of one key.
 local function ShowRules(f, binding)
-    f.listScroll:Hide(); f.empty:Hide(); f.status:Hide()
-    for _, row in ipairs(f.keyRows) do row:Hide() end
-    f.ruleScroll:Show(); f.addRule:Show(); f.room:Show(); f.problems:Show(); f.back:Show()
-    f.listHead:SetText(KeyName(binding.key))
-    f.add.label:SetText(capture and "Press a key or button (Esc)" or "Change the key")
+    f.ruleScroll:Show(); f.addRule:Show(); f.problems:Show(); f.hover:Show(); f.pre:Show(); f.change:Show()
+    f.paneHead:SetText(KeyName(binding.key))
+    f.change.label:SetText(capture == "change" and "Press a key or button (Esc)" or "Change the key")
+    f.hover.label:SetText(binding.hover and "Works anywhere" or "Unit frames only")
+    local extras = 0
+    for _, what in ipairs(PRE_ORDER) do
+        if binding.pre and binding.pre[what] then extras = extras + 1 end
+    end
+    f.pre.label:SetText(extras > 0 and ("Before cast: " .. extras) or "Before cast")
     local count = #binding.rules
     for i = 1, max(count, #f.ruleRows) do
         local row = f.ruleRows[i]
         local rule = binding.rules[i]
         if rule then
             if not row then
-                row = NewRuleRow(f.ruleContent, f.w)
+                row = NewRuleRow(f.ruleContent, f.rw)
                 f.ruleRows[i] = row
             end
             row.index = i
             row.number:SetText(tostring(i))
+            local action = rule.action
+            -- The conditions in use, one after the other, then the way to add one.
+            local x, unset = 16, 0
             for c, spec in ipairs(CONDITIONS) do
                 local value = ConditionValue(rule.when, spec.field)
                 row.values[spec.field] = value
                 local button = row.conditions[c]
-                button.label:SetText(spec.text[value] or ("Form " .. tostring(value)))
                 if value == false then
-                    button.label:SetTextColor(0.55, 0.55, 0.55)
+                    unset = unset + 1
+                    button:Hide()
                 else
-                    button.label:SetTextColor(1, 1, 1)
+                    local text = spec.text[value] or ("Form " .. tostring(value))
+                    local width = max(44, 14 + #text * 6)
+                    button.label:SetText(text)
+                    button:SetWidth(width)
+                    button:ClearAllPoints()
+                    button:SetPoint("TOPLEFT", x, 0)
+                    button:Show()
+                    x = x + width + 3
                 end
             end
-            local action = rule.action
+            row.always:SetShown(unset == #CONDITIONS)
+            row.always:ClearAllPoints()
+            row.always:SetPoint("TOPLEFT", x, -5)
+            if unset == #CONDITIONS then x = x + 46 end
+            row.addCond:SetShown(unset > 0 and action.type ~= "text")
+            row.addCond:ClearAllPoints()
+            row.addCond:SetPoint("TOPLEFT", x, 0)
+
             row.kind.label:SetText(KIND_TEXT[action.type] or "?")
             row.kindNow = action.type
             local named = NAMED[action.type] and true or false
-            local chosen = named and (action.name or action.spellID or action.itemID) and true or false
+            local chosen = named and (action.name or action.spellID or action.itemID or action.text) and true or false
             row.choice:SetShown(named)
-            if chosen then
+            if chosen and action.type == "text" then
+                row.shown = FirstLine(action.text)
+                row.choice.icon:SetTexture(ActionEntry(action).icon)
+                row.choice.icon:Show()
+                row.choice.label:SetTextColor(1, 1, 1)
+            elseif chosen then
                 local entry = ActionEntry(action)
                 local rank = action.pinned and RankText(action.spellID)
                 row.shown = entry.name .. (rank and ("  (" .. rank .. " only)") or (action.pinned and "  (this rank only)" or ""))
@@ -746,7 +1272,7 @@ local function ShowRules(f, binding)
             end
             row.choice.label:SetText(row.shown or "")
             row.fixed:SetShown(not named)
-            row.fixed:SetText(not named and (ACTION_NAME[action.type] or "") or "")
+            row.fixed:SetText(named and "" or PRESET[action.type] and PresetText(action) or ACTION_NAME[action.type] or "")
             row.up:SetShown(i > 1)
             row.down:SetShown(i < count)
             row:ClearAllPoints()
@@ -758,13 +1284,18 @@ local function ShowRules(f, binding)
     end
     f.ruleContent:SetHeight(max(10, count * RULE_H))
     local compiled = CompileBinding(binding)
-    f.room:SetText(compiled.length and (compiled.length .. " of " .. MACRO_LIMIT .. " characters used") or "")
+    -- The room a key uses only matters when it is running out.
+    local length = compiled.length or 0
+    f.room:SetShown(length > ROOM_WARN)
+    f.room:SetText(length .. " of " .. MACRO_LIMIT .. " characters")
+    if compiled.tooLong then f.room:SetTextColor(0.95, 0.4, 0.4) else f.room:SetTextColor(0.95, 0.55, 0.3) end
     local lines = {}
     for _, problem in ipairs(compiled.problems) do lines[#lines + 1] = problem end
     if compiled.skipped > 0 then
         lines[#lines + 1] = compiled.skipped .. " rule(s) skipped: you do not know the spell."
     end
-    f.problems:SetText(table.concat(lines, " "))
+    f.problemLines = lines
+    f.problems:SetText((#lines > 1 and ("(" .. #lines .. ") ") or "") .. table.concat(lines, " "))
 end
 
 Refresh = function()
@@ -774,12 +1305,27 @@ Refresh = function()
     if not (f and settings) then return end
     local set, name = ActiveSet()
     if editing and not (set and set.bindings[editing]) then editing = nil end
+    if editing then quick = false end
+    local rule = editing and writing and set.bindings[editing].rules[writing]
+    if not (rule and rule.action.type == "text") then writing = nil end
+    if writing and not f.writer:IsShown() then
+        f.writer.box:SetText(rule.action.text or TEXT_START)
+        f.writer:Show()
+        f.writer.box:SetFocus()
+    elseif not writing then
+        f.writer:Hide()
+    end
+    if not quick then hovered = nil end
 
     OnOff(f.enable, settings.enabled)
     OnOff(f.blizzard, settings.frames.blizzard)
     OnOff(f.registered, settings.frames.registered)
-    f.set.label:SetText(name or (settings.set and (settings.set .. " (missing)")) or "No set")
-    if f.confirmDelete and f.confirmDelete ~= name then f.confirmDelete = nil end
+    OnOff(f.down, settings.down)
+    f.undo:SetShown(CanUndo())
+    local _, specName, specOwn = SpecState()
+    f.set.label:SetText(name and (name .. (specOwn and ("  [" .. specName .. "]") or ""))
+        or (settings.set and (settings.set .. " (missing)")) or "No set")
+    if confirmDelete and confirmDelete ~= name then confirmDelete = nil end
 
     local showName = naming ~= nil
     f.nameBox:SetShown(showName); f.nameOk:SetShown(showName and naming ~= "export"); f.nameCancel:SetShown(showName)
@@ -792,6 +1338,7 @@ Refresh = function()
     end
     f.blizzard:SetShown(not showName); f.blizzardText:SetShown(not showName)
     f.registered:SetShown(not showName); f.registeredText:SetShown(not showName)
+    f.down:SetShown(not showName); f.downText:SetShown(not showName)
 
     local provider = ClickLegendAPI and ClickLegendAPI.provider
     local status = ""
@@ -801,15 +1348,45 @@ Refresh = function()
     end
     f.status:SetText(status)
 
-    local notes = {}
-    if message then notes[#notes + 1] = message end
-    if settings.enabled then
-        for _, conflict in ipairs(CastConflicts()) do notes[#notes + 1] = conflict end
+    -- The notice line.
+    notes = {}
+    local yes, no = nil, nil
+    if confirmDelete then
+        notes[1] = "Delete the set " .. confirmDelete .. " for every character?"
+        yes, no = "Delete", "Keep"
+    else
+        if message then notes[#notes + 1] = message end
+        if settings.enabled then
+            for _, conflict in ipairs(CastConflicts()) do notes[#notes + 1] = conflict end
+        elseif not message and set and #set.bindings > 0 then
+            notes[1] = "Click casting is off: these keys do nothing yet."
+            yes = "Turn on"
+        end
     end
-    f.notice:SetText(table.concat(notes, "\n"))
+    f.notice:SetText((#notes > 1 and ("(1 of " .. #notes .. ", point here for all) ") or "") .. (notes[1] or ""))
+    f.bannerYes:SetShown(yes ~= nil); f.bannerYes.label:SetText(yes or "")
+    f.bannerNo:SetShown(no ~= nil); f.bannerNo.label:SetText(no or "")
 
-    f.add:SetShown(set ~= nil)
-    if editing then ShowRules(f, set.bindings[editing]) else ShowList(f, set) end
+    ShowKeys(f, set)
+    -- The right pane shows one thing at a time.
+    f.ruleScroll:Hide(); f.addRule:Hide(); f.room:Hide(); f.problems:Hide(); f.hover:Hide(); f.pre:Hide(); f.change:Hide()
+    f.quickScroll:Hide(); f.quickKeys:Hide(); f.back:Hide(); f.quickSearch:Hide(); f.quickSearchHint:Hide(); f.quickRanks:Hide()
+    f.hint:Hide()
+    for _, row in ipairs(f.ruleRows) do row:Hide() end
+    if quick then
+        ShowQuick(f)
+    elseif editing then
+        ShowRules(f, set.bindings[editing])
+    else
+        ShowHint(f, set)
+    end
+
+    -- A key that was just added goes straight on to choosing its spell.
+    if openFirst then
+        openFirst = false
+        local first = editing and f.ruleRows[1]
+        if first and first:IsShown() and not capture then Safe(OpenChoice, first) end
+    end
 end
 
 -- Called by Window.lua: the tab's frame, made on first use, filling `parent`.
@@ -825,9 +1402,24 @@ local function RefreshEditor()
     if panel and panel:IsShown() then Safe(Refresh) end
 end
 
+-- Shows the rules of one key of the set in use (a click on the legend).
+local function EditorSelectKey(keyStr)
+    local set = ActiveSet()
+    if not (panel and set and type(keyStr) == "string") then return false end
+    for i, binding in ipairs(set.bindings) do
+        if binding.key == keyStr then
+            editing, quick, writing, message = i, false, nil, nil
+            Safe(Refresh)
+            return true
+        end
+    end
+    return false
+end
+
 -------------------------------------------------------------------------------
 --  Used by the other files
 -------------------------------------------------------------------------------
-ns.GetEditor     = GetEditor
-ns.KeyRuleLines  = KeyRuleLines
-ns.RefreshEditor = RefreshEditor
+ns.EditorSelectKey = EditorSelectKey
+ns.GetEditor       = GetEditor
+ns.KeyRuleLines    = KeyRuleLines
+ns.RefreshEditor   = RefreshEditor

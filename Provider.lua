@@ -23,12 +23,13 @@ local Print, Safe, ParseKey = API.Print, API.Safe, API.ParseKey
 
 local NIL = {}                              -- stands for "the attribute was not set"
 local KEYS_FLAG = "clg-keys"                -- on a frame: entering it binds the keyboard keys
+local OWN_FLAG = "clg-own"                  -- on a frame: bound in combat by the header, before it was tracked
 local weak = { __mode = "k" }
 
 local tracked = {}                          -- frame -> "blizzard" | "registered"
 local written = setmetatable({}, weak)      -- frame -> { attribute = value we wrote }
 local original = setmetatable({}, weak)     -- frame -> { attribute = value before us, or NIL }
-local clicksSet = setmetatable({}, weak)    -- frames whose click registration we changed
+local clicksSet = setmetatable({}, weak)    -- frame -> "up" | "down": the click registration we gave it
 local menuProxy = setmetatable({}, weak)    -- frame -> its menu helper button
 local rankProxy = {}                        -- spell id -> helper button name
 local dirty = false                         -- a change is waiting for combat to end
@@ -92,6 +93,10 @@ end
 --  The plan: what the active set asks for, the same on every frame.
 --  plan[i] = { prefix = "shift-", button = 1, text = macro text }     mouse buttons
 --  keys[i] = { key = "SHIFT-F", text = macro text }      keyboard keys and the wheel
+--  hover[i] = { key = "SHIFT-F", text = macro text }     keys that work anywhere
+--  A key set to work anywhere is bound all the time, not only while the
+--  cursor is on a unit frame. A mouse button set so is in `hover` and in
+--  `plan`: a unit frame takes its own clicks before any key binding is asked.
 -------------------------------------------------------------------------------
 local warned = {}
 local function WarnOnce(text)
@@ -116,11 +121,11 @@ local function MacroBody(name)
 end
 
 local function BuildPlan()
-    local plan, keys = {}, {}               -- fresh ones each time
+    local plan, keys, hover = {}, {}, {}    -- fresh ones each time
     local settings = API.Settings()
-    if not (settings and settings.enabled) then return plan, keys end
+    if not (settings and settings.enabled) then return plan, keys, hover end
     local set = API.ActiveSet()
-    if not set then return plan, keys end
+    if not set then return plan, keys, hover end
     for _, binding in ipairs(set.bindings) do
         local mods, key = ParseKey(binding.key)
         local button = tonumber(key:match("^BUTTON(%d+)$"))
@@ -137,18 +142,25 @@ local function BuildPlan()
                     text = compiled.text
                 end
             end
+            local anywhere = text and binding.hover and API.HoverAllowed(binding.key)
+            if anywhere and not (SetOverrideBindingClick and ClearOverrideBindings) then
+                -- Without the game's override bindings the key stays a unit-frame key.
+                WarnOnce("this game client cannot bind keys to work anywhere; those keys work on unit frames only.")
+                anywhere = false
+            end
+            if anywhere then hover[#hover + 1] = { key = mods .. key, text = text } end
             if text and button then
                 -- A plain mouse button with a rule that asks for an extra modifier
                 -- must also answer when that modifier is held: "*" is any modifier.
                 -- A key bound with that modifier itself still wins, being exact.
                 if prefix == "" and API.UsesExtraModifier(binding) then prefix = "*" end
                 plan[#plan + 1] = { prefix = prefix, button = button, text = text }
-            elseif text then
+            elseif text and not anywhere then
                 keys[#keys + 1] = { key = mods .. key, text = text }
             end
         end
     end
-    return plan, keys
+    return plan, keys, hover
 end
 
 -- The attributes one frame should carry for the plan.
@@ -176,16 +188,26 @@ local function Usable(frame)
     return true
 end
 
+-- True when clicks on unit frames are to act as the button goes down.
+local function ClicksDown()
+    local settings = API.Settings()
+    return settings and settings.enabled and settings.down and true or false
+end
+
 -- Brings one frame in line with `want`: writes what is missing or different,
 -- and puts back the earlier value of anything written before and no longer
 -- wanted.
 local function SyncFrame(frame, want)
     if not Usable(frame) then return end
     local mine, before = written[frame], original[frame]
+    local adopted = false
     if not mine then
         if not next(want) then return end
         mine, before = {}, {}
         written[frame], original[frame] = mine, before
+        -- A frame the header bound in combat already carries our values: what
+        -- it had before them was nothing.
+        adopted = frame:GetAttribute(OWN_FLAG) and true or false
     end
     for attribute in pairs(mine) do
         if want[attribute] == nil then
@@ -199,22 +221,27 @@ local function SyncFrame(frame, want)
         if mine[attribute] ~= value then
             if before[attribute] == nil then
                 local old = frame:GetAttribute(attribute)
-                before[attribute] = old == nil and NIL or old
+                before[attribute] = (adopted or old == nil) and NIL or old
             end
             frame:SetAttribute(attribute, value)
             mine[attribute] = value
         end
     end
     -- Extra mouse buttons only reach a frame that listens for every button, so
-    -- the frame is set to hear every button on release. The game's "cast on
-    -- key down" setting would then drop those clicks (it waits for a press the
-    -- frame no longer hears), so the frame is told to act on release. The two
-    -- go together and both stay until a reload: the game offers no way to read
-    -- what a frame listened for before.
-    if next(mine) and tracked[frame] and not clicksSet[frame] and frame.RegisterForClicks then
-        frame:RegisterForClicks("AnyUp")
-        frame:SetAttribute("useOnKeyDown", false)
-        clicksSet[frame] = true
+    -- the frame is set to hear every button: on release, or on the press when
+    -- the player asked for that. The game's "cast on key down" setting would
+    -- then drop the clicks it is not waiting for, so the frame is told which
+    -- of the two to act on. The two go together. A frame we no longer bind
+    -- goes back to acting on release, which is what the game's own menu and
+    -- targeting expect; the game offers no way to read what it listened for
+    -- before us, so that much stays until a reload.
+    if tracked[frame] and frame.RegisterForClicks then
+        local clicks = (next(mine) and ClicksDown()) and "down" or "up"
+        if (next(mine) or clicksSet[frame]) and clicksSet[frame] ~= clicks then
+            frame:RegisterForClicks(clicks == "down" and "AnyDown" or "AnyUp")
+            frame:SetAttribute("useOnKeyDown", clicks == "down")
+            clicksSet[frame] = clicks
+        end
     end
 end
 
@@ -231,7 +258,7 @@ end
 --  wraps run in the game's restricted environment, which is what lets them
 --  work in combat.
 -------------------------------------------------------------------------------
-local header, keyButton, keyMenu
+local header, keyButton, keyMenu, hoverMenu
 local wrapped = setmetatable({}, weak)      -- frames that carry the wraps
 local snippetEnter, snippetLeave = "", ""
 
@@ -256,6 +283,12 @@ local function EnsureKeyFrames()
     keyMenu:SetAttribute("type", "togglemenu")
     for i = 1, 5 do keyMenu:SetAttribute("type" .. i, "togglemenu") end
     header:SetFrameRef("keyMenu", keyMenu)
+    -- The menu for a key that works anywhere: whatever is under the cursor.
+    hoverMenu = HelperButton("ClickLegendCastHoverMenu", UIParent)
+    hoverMenu:SetSize(1, 1)
+    hoverMenu:SetAttribute("type", "togglemenu")
+    for i = 1, 5 do hoverMenu:SetAttribute("type" .. i, "togglemenu") end
+    hoverMenu:SetAttribute("unit", "mouseover")
 end
 
 local function WrapFrame(frame)
@@ -269,11 +302,39 @@ local function WrapFrame(frame)
     end
 end
 
--- Brings the hidden key button and the two snippets in line with `keys`.
-local function SyncKeys(keys)
-    if #keys == 0 and not header then return end
+-- Keys that work anywhere are held by the header as override bindings: the
+-- game gives them back to whatever they were when the header lets go.
+local hoverBound = ""
+
+local function SyncHover(hover)
+    local parts = {}
+    for i, k in ipairs(hover) do parts[i] = k.key end
+    local signature = table.concat(parts, " ")
+    if signature == hoverBound then return end
+    hoverBound = ""
+    if not (SetOverrideBindingClick and ClearOverrideBindings) then return end
+    ClearOverrideBindings(header)
+    for i, k in ipairs(hover) do
+        SetOverrideBindingClick(header, true, k.key, "ClickLegendCastKeys", "clgh" .. i)
+    end
+    hoverBound = signature
+end
+
+-- Brings the hidden key button, the two snippets and the keys that work
+-- anywhere in line with `keys` and `hover`.
+local function SyncKeys(keys, hover)
+    if #keys == 0 and #hover == 0 and not header then return end
     EnsureKeyFrames()
     local want, enter, leave, menu = {}, {}, {}, false
+    for i, k in ipairs(hover) do
+        local text = k.text
+        if text:find("{", 1, true) then
+            text = text:gsub("{menu}", "ClickLegendCastHoverMenu")
+            text = text:gsub("{rank:(%d+)}", function(id) return RankProxyName(tonumber(id)) end)
+        end
+        want["*type-clgh" .. i] = "macro"
+        want["*macrotext-clgh" .. i] = text
+    end
     for i, k in ipairs(keys) do
         local suffix = "clg" .. i
         local text = k.text
@@ -300,9 +361,89 @@ local function SyncKeys(keys)
         header:SetAttribute("clg_leave", leaveText)
         snippetLeave = leaveText
     end
+    SyncHover(hover)
 end
 
-local plan, keyPlan = {}, {}                -- as of the last Apply
+local plan, keyPlan, hoverPlan = {}, {}, {} -- as of the last Apply
+
+-------------------------------------------------------------------------------
+--  Frames made during combat. Nothing outside the game's restricted
+--  environment may write to a new unit frame then. Group frames from a
+--  secure group header can still be reached: the header's own set-up code
+--  runs in that environment for each frame it makes, and by a convention
+--  that began with Clique it looks for a frame reference "clickcast_header"
+--  on the group header and runs that frame's "clickcast_register" snippet
+--  with the new frame in "clickcast_button". Our header answers to that, with
+--  a snippet that writes the mouse-button bindings. Keyboard keys and the
+--  unit menu on such a frame start when combat ends: both need a helper that
+--  cannot be made in combat. The game's own raid frames have no such hook and
+--  are still bound when combat ends.
+-------------------------------------------------------------------------------
+local Track                                 -- defined below
+local offered = setmetatable({}, weak)      -- group headers looked at
+local snippetOn, snippetOff = nil, nil
+
+local function SyncRegisterSnippet()
+    local on = GroupEnabled("registered")
+    if not header then
+        if not on then return end
+        EnsureKeyFrames()
+    end
+    -- Called from the snippet: note the frame, so that it is brought fully in
+    -- line after combat and put back when the bindings are switched off.
+    header.ClgAdopt = function(self)
+        local frame = self:GetAttribute("clickcast_button")
+        if type(frame) == "table" and not tracked[frame] then
+            Track(frame, "registered")
+            dirty = true
+        end
+    end
+    -- And the other way: a frame taken back is let go when combat ends.
+    header.ClgRelease = function(self)
+        local frame = self:GetAttribute("clickcast_button")
+        if type(frame) == "table" and tracked[frame] == "registered" then
+            tracked[frame] = "released"
+            dirty = true
+        end
+    end
+    local head = 'local button = self:GetAttribute("clickcast_button")\nif not button then return end'
+    local set, clear = { head }, { head }
+    if on then
+        for _, p in ipairs(plan) do
+            if not p.text:find("{menu}", 1, true) then
+                local text = p.text:gsub("{rank:(%d+)}", function(id) return RankProxyName(tonumber(id)) end)
+                local kind, body = p.prefix .. "type" .. p.button, p.prefix .. "macrotext" .. p.button
+                set[#set + 1] = ("button:SetAttribute(%q, %q)"):format(kind, "macro")
+                set[#set + 1] = ("button:SetAttribute(%q, %q)"):format(body, text)
+                clear[#clear + 1] = ("button:SetAttribute(%q, nil)"):format(kind)
+                clear[#clear + 1] = ("button:SetAttribute(%q, nil)"):format(body)
+            end
+        end
+        set[#set + 1] = ("button:SetAttribute(%q, true)"):format(OWN_FLAG)
+        set[#set + 1] = ("button:SetAttribute(%q, %s)"):format("useOnKeyDown", tostring(ClicksDown()))
+        set[#set + 1] = 'self:CallMethod("ClgAdopt")'
+        clear[#clear + 1] = ("button:SetAttribute(%q, nil)"):format(OWN_FLAG)
+        clear[#clear + 1] = 'self:CallMethod("ClgRelease")'
+    end
+    local setText, clearText = table.concat(set, "\n"), table.concat(clear, "\n")
+    if setText ~= snippetOn then header:SetAttribute("clickcast_register", setText); snippetOn = setText end
+    if clearText ~= snippetOff then header:SetAttribute("clickcast_unregister", clearText); snippetOff = clearText end
+    -- Frame addons that look for this name when they make a group header.
+    if on and ClickCastHeader == nil then ClickCastHeader = header end
+end
+
+-- Hands our header to the group header a tracked frame belongs to, unless
+-- another click-cast addon's is already there.
+local function OfferHeader(frame)
+    if not (header and SecureHandlerSetFrameRef and frame.GetParent) then return end
+    local ok, parent = pcall(frame.GetParent, frame)
+    if not ok or type(parent) ~= "table" or offered[parent] or not parent.GetAttribute then return end
+    offered[parent] = true
+    if type(parent:GetAttribute("initialConfigFunction")) ~= "string" then return end       -- not a group header
+    if parent:GetAttribute("frameref-clickcast_header") ~= nil then return end
+    local ok2, err = pcall(SecureHandlerSetFrameRef, parent, "clickcast_header", header)
+    if not ok2 then API.Report(err) end
+end
 
 local function SyncTracked(frame)
     local group = tracked[frame]
@@ -317,10 +458,15 @@ local function SyncTracked(frame)
 end
 
 local function ApplyNow()
-    plan, keyPlan = BuildPlan()
-    local ok, err = pcall(SyncKeys, keyPlan)
-    if not ok then API.Report(err); keyPlan = {} end
-    for frame in pairs(tracked) do SyncTracked(frame) end
+    plan, keyPlan, hoverPlan = BuildPlan()
+    local ok, err = pcall(SyncKeys, keyPlan, hoverPlan)
+    if not ok then API.Report(err); keyPlan, hoverPlan = {}, {} end
+    local ok2, err2 = pcall(SyncRegisterSnippet)
+    if not ok2 then API.Report(err2) end
+    for frame, group in pairs(tracked) do
+        SyncTracked(frame)
+        if group == "registered" and GroupEnabled(group) then OfferHeader(frame) end
+    end
 end
 
 -- A frame that turned up after the last Apply gets the same plan.
@@ -331,7 +477,7 @@ end
 -------------------------------------------------------------------------------
 --  Finding frames
 -------------------------------------------------------------------------------
-local function Track(frame, group)
+Track = function(frame, group)
     if not Usable(frame) or tracked[frame] then return end
     tracked[frame] = group
 end
@@ -493,6 +639,7 @@ API.provider = {
     Apply = Apply,
     Started = function() return started end,
     Pending = function() return dirty end,
+    Anywhere = function() return #hoverPlan end,
     Count = function()
         local frames, bound = 0, 0
         for frame in pairs(tracked) do

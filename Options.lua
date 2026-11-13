@@ -80,28 +80,49 @@ local OPTIONS = {
           order = { "held", "all" },
           tip = "All at once stacks the Shift, Ctrl and Alt bindings under the plain ones, "
               .. "so nothing has to be held to read them." },
+        { header = "LAYOUT" },
         { kind = "choice", key = "layout", text = "Layout",
-          values = { horizontal = "Horizontal", vertical = "Vertical" },
-          order = { "horizontal", "vertical" },
-          tip = "Horizontal runs the buttons left to right; vertical runs them top to bottom." },
+          values = { horizontal = "Horizontal", vertical = "Vertical", mouse = "Mouse picture" },
+          order = { "horizontal", "vertical", "mouse" },
+          tip = "Horizontal runs the buttons left to right; vertical runs them top to bottom. "
+              .. "Mouse picture draws a mouse with each button's spells beside it; keyboard keys are listed under it." },
+        { kind = "choice", key = "mousePic", text = "Which mouse",
+          values = { a = "Rounded", b = "Angular", c = "Simple", d = "Twelve side buttons" },
+          order = { "a", "b", "c", "d" },
+          tip = "The mouse drawn by the Mouse picture layout. For the one with twelve side buttons, "
+              .. "the guided setup asks you to press each of them, so that every spell lands on the right one." },
+        { kind = "range", key = "mouseSize", text = "Mouse picture size", lo = 96, hi = 256, step = 8 },
         { kind = "choice", key = "rows", text = "Show",
           values = { both = "Ally and enemy", ally = "Ally only", enemy = "Enemy only" },
           order = { "both", "ally", "enemy" } },
         { kind = "range", key = "perLine", text = "Buttons per line", lo = 2, hi = 24, step = 1 },
-        { kind = "toggle", key = "hoverDim", text = "Dim the row that does not apply",
-          tip = "With the cursor on a friendly unit the enemy spells step back, and the other way round." },
+        { header = "ICONS" },
         { kind = "toggle", key = "flagMissing", text = "Grey out bindings that cannot fire",
           tip = "Marks a binding whose spell is not learned or whose macro no longer exists." },
+        { kind = "toggle", key = "flagUnusable", text = "Show when a spell cannot be cast",
+          tip = "A cooldown sweeps over its icon, a spell you lack the mana for turns blue, "
+              .. "and one that cannot reach the unit under the cursor turns red." },
+        { kind = "toggle", key = "flash", text = "Flash an icon when its spell is cast",
+          tip = "A short flash on the legend each time one of the shown spells goes off." },
+        { header = "WHILE HOVERING A UNIT" },
+        { kind = "toggle", key = "hoverDim", text = "Step back the row that does not apply",
+          tip = "With the cursor on a friendly unit the enemy spells step back, and the other way round." },
+        { kind = "choice", key = "offStyle", text = "Spells that do not apply",
+          values = { dim = "Dim them", hide = "Hide them" }, order = { "dim", "hide" },
+          tip = "Hide takes the other side's row away, and leaves an empty place for a spell that cannot "
+              .. "reach the unit under the cursor, so the legend shows only what will work on that unit." },
         { header = "POSITION" },
         { kind = "choice", key = "anchor", text = "Attach to",
-          values = { screen = "Nothing (drag it)", party = "Party frames" },
-          order = { "screen", "party" },
-          tip = "Attached, the legend follows the party frames. "
-              .. "With no party frames on screen it uses the dragged position." },
-        { kind = "choice", key = "anchorSide", text = "Side of the party frames",
+          values = { screen = "Nothing (drag it)", party = "Party frames", cursor = "The cursor" },
+          order = { "screen", "party", "cursor" },
+          tip = "Party frames: the legend follows them, and uses the dragged position when none are on screen. "
+              .. "The cursor: it stays beside the pointer; with Visible set to Hovering a unit frame it only "
+              .. "appears where you are about to click." },
+        { kind = "choice", key = "anchorSide", text = "On which side",
           values = { above = "Above", below = "Below", left = "Left", right = "Right" },
-          order = { "above", "below", "left", "right" } },
-        { kind = "range", key = "anchorGap", text = "Gap to the party frames", lo = 0, hi = 60, step = 1 },
+          order = { "above", "below", "left", "right" },
+          tip = "The side of the party frames, or of the cursor, the legend sits on." },
+        { kind = "range", key = "anchorGap", text = "Gap", lo = 0, hi = 60, step = 1 },
         { header = "TOOLTIP" },
         { kind = "toggle", key = "tooltip", text = "Show bindings in unit tooltips",
           tip = "Hovering a friendly unit frame lists your ally spells; an enemy frame lists your enemy spells." },
@@ -124,8 +145,9 @@ local OPTIONS = {
         { header = "LABELS" },
         { kind = "toggle", key = "labels", text = "Button labels" },
         { kind = "choice", key = "labelStyle", text = "Label style",
-          values = { text = "Text", icon = "Icons" }, order = { "text", "icon" },
-          tip = "Icons draw a small mouse with the bound button lit, and a keycap for keyboard keys." },
+          values = { text = "Text", icon = "Icons", corner = "On the icon" }, order = { "text", "icon", "corner" },
+          tip = "Icons draw a small mouse with the bound button lit, and a keycap for keyboard keys. "
+              .. "On the icon writes the key in the corner of the spell icon, which makes the legend smaller." },
         { kind = "range", key = "labelSize", text = "Label size", lo = 7, hi = 14, step = 1 },
         { kind = "toggle", key = "bars", text = "Ally / enemy color bars" },
         { header = "COLORS" },
@@ -168,9 +190,17 @@ local PRESETS = {
     full = { name = "Everything", set = {
         layout = "horizontal", rows = "both", layers = "all", iconSize = 26, spacing = 2, perLine = 12,
         labels = true, labelStyle = "icon", labelSize = 9, bars = true, background = true } },
+    -- Out of the way: beside the cursor, only while it is on a unit frame,
+    -- and only what works on that unit.
+    minimal = { name = "Minimal", set = {
+        layout = "horizontal", rows = "both", layers = "held", iconSize = 22, spacing = 1, perLine = 12,
+        labels = true, labelStyle = "corner", labelSize = 8, bars = false, background = false,
+        anchor = "cursor", anchorSide = "right", anchorGap = 6, visibility = "hover",
+        hoverDim = true, offStyle = "hide" } },
 }
-local PRESET_ORDER = { "default", "compact", "sidebar", "full" }
-local PRESET_NOTE = "A preset changes the layout only. Position, colors, order and visibility stay as they are."
+local PRESET_ORDER = { "default", "compact", "sidebar", "full", "minimal" }
+local PRESET_NOTE = "A preset changes the layout only; colors and order stay as they are. Minimal also puts the "
+    .. "legend beside the cursor and shows it only on a unit frame; any other preset puts it back."
 
 OPTIONS.Share = {
     { header = "PRESETS" },
@@ -301,6 +331,12 @@ end
 ApplyPreset = function(id)
     local preset = PRESETS[id]
     if not (db and preset) then return false end
+    -- Minimal is the one preset that moves the legend to the cursor and shows
+    -- it only on a unit frame. Leaving it for another puts those back, or the
+    -- legend would seem to have gone.
+    if id ~= "minimal" and db.anchor == "cursor" then
+        db.anchor, db.visibility, db.offStyle = "screen", "always", "dim"
+    end
     for key, value in pairs(preset.set) do db[key] = value end
     AfterBulkChange()
     return true
@@ -506,6 +542,12 @@ end
 --  Used by the other files
 -------------------------------------------------------------------------------
 ns.ApplyPreset          = ApplyPreset
+-- Several settings at once, from a screen of its own (the guided setup).
+ns.SetSettings          = function(values)
+    if not db then return end
+    for key, value in pairs(values) do db[key] = value end
+    AfterBulkChange()
+end
 ns.ExportSettings       = ExportSettings
 ns.GetColor             = GetColor
 ns.ImportSettings       = ImportSettings

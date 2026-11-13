@@ -13,6 +13,8 @@ ignore:
   # Local only; listed so they cannot ship even if committed later.
   - CLAUDE.md
   - dev
+  # The source art for the mouse picture; media/mouse.png is what ships.
+  - mouse-files
   - .claude
   - .vscode
   - .idea

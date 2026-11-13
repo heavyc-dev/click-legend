@@ -2,11 +2,12 @@
 --  ClickLegend - Launcher.lua
 --  Two ways in for someone who has not typed /clg yet: a minimap button with
 --  the addon's logo, and a welcome window shown once after installing or
---  updating to 2.0.
+--  updating to 2.0. Someone who has already seen that window gets one line
+--  in chat, once, when an update brings something worth knowing about.
 -------------------------------------------------------------------------------
 local _, ns = ...
 
-local type, pcall = type, pcall
+local type, pcall, tonumber = type, pcall, tonumber
 local cos, sin, rad, deg, atan2, max = math.cos, math.sin, math.rad, math.deg, math.atan2, math.max
 
 local db
@@ -14,8 +15,8 @@ ns.Subscribe("db", function(value) db = value end)
 
 local ACCENT, ApplyFont, NewButton, NewText, Safe =
     ns.ACCENT, ns.ApplyFont, ns.NewButton, ns.NewText, ns.Safe
-local OpenGuidedSetup, ToggleWindow =
-    ns.OpenGuidedSetup, ns.ToggleWindow
+local OpenGuidedSetup, ToggleWindow, Print =
+    ns.OpenGuidedSetup, ns.ToggleWindow, ns.Print
 
 local LOGO = "Interface\\AddOns\\ClickLegend\\ClickLegend-Logo.png"
 -- The logo is the legend's grid on a dark square; this is the grid alone.
@@ -138,7 +139,8 @@ local function BuildWelcome()
     text:SetWidth(340)
     text:SetText("The legend shows what your click-cast keys do. It can also do the click casting itself, "
         .. "with rules like \"dead ally: resurrect, ally: heal, enemy: damage\" on one key.\n\n"
-        .. "The guided setup takes a few minutes. You can open either one later with /clg or the minimap button.")
+        .. "Guided setup starts from a ready-made set for your class: two clicks and it is on. "
+        .. "You can open either one later with /clg or the minimap button.")
 
     local guide = NewButton(f, 130, 26, "Guided setup")
     guide:SetPoint("BOTTOMLEFT", 16, 16)
@@ -167,14 +169,34 @@ local function ShowWelcome(again)
     return true
 end
 
+-- What is new, in one line of chat, once per account for each NEWS_VERSION.
+-- Not for someone who is being shown the welcome window: that says it all.
+local NEWS_VERSION = 1              -- 1: 2.1.0
+local NEWS = "new in this version: a two-click guided setup, Quickbind, keys that work on any unit under the "
+    .. "cursor, and a mouse picture for the legend. /clg setup to look around."
+
+local function ShowNews(welcoming)
+    local store = ClickLegendCastDB
+    if type(store) ~= "table" or (tonumber(store.news) or 0) >= NEWS_VERSION then return false end
+    store.news = NEWS_VERSION
+    if welcoming then return false end
+    Print(NEWS)
+    return true
+end
+
 -- At login: the button at once, the welcome a moment later, when the rest
 -- of the interface has settled.
 local function StartLauncher()
     UpdateMinimapButton()
+    local function Greet()
+        local welcoming = false
+        Safe(function() welcoming = ShowWelcome() end)
+        Safe(ShowNews, welcoming)
+    end
     if C_Timer and C_Timer.After then
-        C_Timer.After(3, function() Safe(ShowWelcome) end)
+        C_Timer.After(3, Greet)
     else
-        Safe(ShowWelcome)
+        Greet()
     end
 end
 

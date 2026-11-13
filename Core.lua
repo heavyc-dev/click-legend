@@ -70,20 +70,25 @@ local DEFAULTS = {
     point = "CENTER", relPoint = "CENTER", x = 0, y = -180,
     scale = 1, alpha = 1, iconSize = 28, spacing = 2,
     locked = false, hidden = false, labels = true, labelSize = 9, bars = true,
-    labelStyle = "text",        -- text | icon
+    labelStyle = "text",        -- text | icon | corner
     visibility = "always",      -- always | group | combat | hover
     source = "auto",            -- auto | own | eui | clique | vuhdo | healbot | blizzard
     layers = "held",            -- held | all: which modifier layers are drawn
     hoverDim = true,            -- dim the row that does not apply to the hovered unit
     flagMissing = true,         -- grey out bindings whose spell or macro is gone
-    anchor = "screen",          -- screen | party
+    flagUnusable = true,        -- mark spells that cannot be cast right now
+    offStyle = "dim",           -- dim | hide: what happens to spells that do not apply to the hovered unit
+    flash = true,               -- an icon flashes when its spell is cast
+    anchor = "screen",          -- screen | party | cursor
     anchorSide = "below",       -- above | below | left | right
     anchorGap = 6,
     allyR = 0.05, allyG = 0.82, allyB = 0.62,
     enemyR = 0.90, enemyG = 0.25, enemyB = 0.25,
     background = false, bgR = 0.04, bgG = 0.04, bgB = 0.04, bgA = 0.6, bgPadding = 4,
     tooltip = true, tooltipWorld = false,
-    layout = "horizontal",      -- horizontal | vertical
+    layout = "horizontal",      -- horizontal | vertical | mouse
+    mouseSize = 128,            -- the mouse picture's width and height, for the "mouse" layout
+    mousePic = "a",             -- a | b | c | d: which mouse is drawn (MouseLayout.lua)
     rows = "both",              -- both | ally | enemy
     enemyFirst = false,
     sort = "mouse",             -- mouse | keyboard | alpha | custom
@@ -101,18 +106,21 @@ local RANGES = {
     allyR = { 0, 1 }, allyG = { 0, 1 }, allyB = { 0, 1 },
     enemyR = { 0, 1 }, enemyG = { 0, 1 }, enemyB = { 0, 1 },
     anchorGap = { 0, 60, true },
+    mouseSize = { 96, 256, true },
     minimapAngle = { 0, 360 },
 }
 local CHOICES = {
-    layout = { horizontal = true, vertical = true },
+    layout = { horizontal = true, vertical = true, mouse = true },
+    mousePic = { a = true, b = true, c = true, d = true },
     rows = { both = true, ally = true, enemy = true },
     sort = { mouse = true, keyboard = true, alpha = true, custom = true },
     visibility = { always = true, group = true, combat = true, hover = true },
     layers = { held = true, all = true },
     source = { auto = true, own = true, eui = true, clique = true, vuhdo = true, healbot = true, blizzard = true },
-    anchor = { screen = true, party = true },
+    anchor = { screen = true, party = true, cursor = true },
+    offStyle = { dim = true, hide = true },
     anchorSide = { above = true, below = true, left = true, right = true },
-    labelStyle = { text = true, icon = true },
+    labelStyle = { text = true, icon = true, corner = true },
 }
 local POINTS = {
     TOPLEFT = true, TOP = true, TOPRIGHT = true, LEFT = true, CENTER = true,

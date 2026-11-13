@@ -86,10 +86,14 @@ local function Help()
     print("  /clg source auto | own | eui | clique | vuhdo | healbot | blizzard (now " .. db.source .. ")")
     print("  /clg cast - ClickLegend's own bindings: status, on | off, sets, set <name>")
     print("  /clg layers held | all - modifier layers shown (now " .. db.layers .. ")")
-    print("  /clg anchor screen | party, /clg side above | below | left | right, /clg gap <0-60>")
+    print("  /clg anchor screen | party | cursor, /clg side above | below | left | right, /clg gap <0-60>")
     print("  /clg hoverdim | missing - toggle row dimming, greying of broken bindings")
+    print("  /clg usable | flash - toggle marking spells you cannot cast, the flash when one is cast")
+    print("  /clg off dim | hide - spells that do not apply to the hovered unit (now " .. db.offStyle .. ")")
     print("  /clg profile - separate settings for this character, or shared")
-    print("  /clg layout horizontal | vertical (now " .. db.layout .. ")")
+    print("  /clg layout horizontal | vertical | mouse (now " .. db.layout .. ")")
+    print("  /clg mouse <96-256> - size of the mouse picture (now " .. db.mouseSize .. ")")
+    print("  /clg mousepic a | b | c | d - which mouse is drawn (now " .. db.mousePic .. ")")
     print("  /clg rows both | ally | enemy (now " .. db.rows .. ")")
     print("  /clg flip - enemy spells first, or ally spells first")
     print("  /clg sort mouse | keyboard | alpha | custom (now " .. db.sort .. ")")
@@ -98,7 +102,7 @@ local function Help()
     print("  /clg wrap <2-24> - buttons per line (now " .. db.perLine .. ")")
     print("  /clg size <16-64> | scale <0.5-2> | alpha <0.1-1>")
     print("  /clg labels | bars | tooltip - toggle labels, color bars, tooltip lines")
-    print("  /clg labelstyle text | icon (now " .. db.labelStyle .. ")")
+    print("  /clg labelstyle text | icon | corner (now " .. db.labelStyle .. ")")
     print("  /clg labelsize <7-14> - label size (now " .. db.labelSize .. ")")
     print("  /clg bg - toggle the background")
     print("  /clg bgcolor | allycolor | enemycolor <RRGGBB> - e.g. /clg bgcolor 101418")
@@ -111,15 +115,15 @@ end
 
 -- Each kind of command is a table from its name to the setting it changes.
 local TOGGLES = {
-    hoverdim = "hoverDim", missing = "flagMissing", bars = "bars", labels = "labels", minimap = "minimap",
+    hoverdim = "hoverDim", missing = "flagMissing", usable = "flagUnusable", flash = "flash", bars = "bars", labels = "labels", minimap = "minimap",
     bg = "background", flip = "enemyFirst", reverse = "reverse",
 }
 local NUMBERS = {
     size = "iconSize", scale = "scale", alpha = "alpha", wrap = "perLine",
-    labelsize = "labelSize", bgalpha = "bgA", pad = "bgPadding", gap = "anchorGap",
+    labelsize = "labelSize", bgalpha = "bgA", pad = "bgPadding", gap = "anchorGap", mouse = "mouseSize",
 }
 local CHOICE_KEYS = {
-    layers = "layers", anchor = "anchor", source = "source", side = "anchorSide",
+    layers = "layers", anchor = "anchor", source = "source", side = "anchorSide", off = "offStyle", mousepic = "mousePic",
     visible = "visibility", labelstyle = "labelStyle", layout = "layout", rows = "rows", sort = "sort",
 }
 local COLORS = { bgcolor = "bg", allycolor = "ally", enemycolor = "enemy" }
@@ -281,6 +285,7 @@ for _, event in ipairs({
     "GROUP_ROSTER_UPDATE", "PLAYER_EQUIPMENT_CHANGED", "SPELLS_CHANGED", "UPDATE_MACROS",
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED",      -- combat state, for the "Visible" setting
     "UPDATE_SHAPESHIFT_FORM", "UNIT_PET",                 -- change which rule of an own binding fires
+    "UNIT_SPELLCAST_SUCCEEDED",                           -- the legend flashes the spell that was cast
 }) do
     pcall(events.RegisterEvent, events, event)      -- an event a client lacks must not stop the rest
 end
@@ -308,7 +313,7 @@ local function StartPolling()
     end)
 end
 
-events:SetScript("OnEvent", function(_, event, arg1)
+events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     if event == "ADDON_LOADED" then
         if arg1 == ADDON_NAME then
             Safe(InitDB)
@@ -322,6 +327,10 @@ events:SetScript("OnEvent", function(_, event, arg1)
         return
     end
     if not db then return end
+    if event == "UNIT_SPELLCAST_SUCCEEDED" then
+        if arg1 == "player" then Safe(ns.SpellCast, arg3) end        -- Display.lua
+        return
+    end
     if event == "PLAYER_LOGIN" then
         Safe(ApplyPosition)
         Safe(Refresh, true)

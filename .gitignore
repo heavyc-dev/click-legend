@@ -15,3 +15,6 @@ dev/
 *.tmp
 Thumbs.db
 .DS_Store
+
+# Source art for the mouse picture (SVG, JSON, every variant). media/mouse.png is the one that ships.
+mouse-files/
