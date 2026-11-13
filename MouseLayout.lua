@@ -18,6 +18,10 @@
 --               they are stacked
 --    grid       a block of side buttons, by row from the top, left to right:
 --               shown as one block of icons with a single line to it
+--    small      the small mouse drawn above a spell icon: one image cut into
+--               `columns` by `columns` cells. Cell 0 is the whole mouse;
+--               `cells` says which cell holds each button on its own, to be
+--               drawn over it lit up. Cells count left to right, then down
 -------------------------------------------------------------------------------
 local _, ns = ...
 
@@ -48,6 +52,11 @@ ns.MOUSE_LAYOUTS = {
         right = { "btn-right" },
         wheel = "wheel",
         wheelKeys = { "BUTTON3", "MOUSEWHEELUP", "MOUSEWHEELDOWN" },
+        small = {
+            texture = "Interface\\AddOns\\ClickLegend\\media\\mouse_a_keys.png",
+            columns = 4,
+            cells = { ["wheel"] = 1, ["btn-left"] = 2, ["btn-right"] = 3, ["btn-side-back"] = 4, ["btn-side-front"] = 5 },
+        },
     },
     b = {
         name = "Angular",
@@ -74,6 +83,11 @@ ns.MOUSE_LAYOUTS = {
         right = { "btn-right" },
         wheel = "wheel",
         wheelKeys = { "BUTTON3", "MOUSEWHEELUP", "MOUSEWHEELDOWN" },
+        small = {
+            texture = "Interface\\AddOns\\ClickLegend\\media\\mouse_b_keys.png",
+            columns = 4,
+            cells = { ["wheel"] = 1, ["btn-left"] = 2, ["btn-right"] = 3, ["btn-side-back"] = 4, ["btn-side-front"] = 5 },
+        },
     },
     c = {
         name = "Simple",
@@ -100,6 +114,11 @@ ns.MOUSE_LAYOUTS = {
         right = { "btn-right" },
         wheel = "wheel",
         wheelKeys = { "BUTTON3", "MOUSEWHEELUP", "MOUSEWHEELDOWN" },
+        small = {
+            texture = "Interface\\AddOns\\ClickLegend\\media\\mouse_c_keys.png",
+            columns = 4,
+            cells = { ["wheel"] = 1, ["btn-left"] = 2, ["btn-right"] = 3, ["btn-side-back"] = 4, ["btn-side-front"] = 5 },
+        },
     },
     d = {
         name = "Twelve side buttons",
@@ -146,6 +165,11 @@ ns.MOUSE_LAYOUTS = {
         right = { "btn-right" },
         wheel = "wheel",
         wheelKeys = { "BUTTON3", "MOUSEWHEELUP", "MOUSEWHEELDOWN" },
+        small = {
+            texture = "Interface\\AddOns\\ClickLegend\\media\\mouse_d_keys.png",
+            columns = 4,
+            cells = { ["wheel"] = 1, ["btn-left"] = 2, ["btn-right"] = 3, ["btn-side-1"] = 4, ["btn-side-2"] = 5, ["btn-side-3"] = 6, ["btn-side-4"] = 7, ["btn-side-5"] = 8, ["btn-side-6"] = 9, ["btn-side-7"] = 10, ["btn-side-8"] = 11, ["btn-side-9"] = 12, ["btn-side-10"] = 13, ["btn-side-11"] = 14, ["btn-side-12"] = 15 },
+        },
         grid = { columns = 3, regions = { "btn-side-1", "btn-side-2", "btn-side-3", "btn-side-4", "btn-side-5", "btn-side-6", "btn-side-7", "btn-side-8", "btn-side-9", "btn-side-10", "btn-side-11", "btn-side-12" } },
     },
 }

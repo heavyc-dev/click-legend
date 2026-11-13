@@ -2,18 +2,20 @@
 --  ClickLegend - Wizard.lua
 --  Guided setup: another way into the Bindings tab. Five steps, six with a
 --  mouse that has a block of side buttons.
---    1. Where to start: a starter set, the set in use, or nothing; and what
---       the legend draws: rows of icons, or one of the mouse pictures. From
---       a starter set, "Use it and turn on" finishes here: two clicks.
---    +  Your side buttons (only with the twelve-button mouse picture): press
---       each one, so that the picture knows which key it sends.
+--    1. Where to start: a starter set, the set in use, or nothing; and
+--       which mouse you have, for the small mouse the legend draws above
+--       each spell. From a starter set, "Use it and turn on" finishes here:
+--       two clicks.
+--    +  Your side buttons (only with the twelve-button mouse): press each
+--       one, so that the legend knows which key it sends.
 --    2. Your buttons: every mouse button and the wheel, each with Plain,
 --       Shift, Ctrl and Alt switches. Extra mouse buttons are added by
 --       clicking them, keyboard keys by pressing them.
 --    3. What they do: one line per chosen key, with what it does on an ally,
 --       on a dead ally and on an enemy side by side.
 --    4. Options: keyboard keys anywhere, a set for this spec, casting as the
---       button goes down.
+--       button goes down, the legend as one large picture of the mouse,
+--       bindings in unit tooltips.
 --    5. Done: a summary and the on/off switch.
 --  The full editor stays there for everything else.
 --
@@ -95,14 +97,13 @@ local Refresh
 --  The pages. Which there are depends on the mouse picture picked on the
 --  first one.
 -------------------------------------------------------------------------------
--- The mouse picture the legend draws: "a" to "d", or false for rows of icons.
+-- The mouse the legend draws: "a" to "d".
 local function MousePick()
-    return db and db.layout == "mouse" and MOUSE_LAYOUTS and MOUSE_LAYOUTS[db.mousePic] and db.mousePic or false
+    return db and MOUSE_LAYOUTS[db.mousePic] and db.mousePic or "a"
 end
 
 local function HasSideBlock()
-    local pick = MousePick()
-    return pick and MOUSE_LAYOUTS[pick].grid ~= nil or false
+    return MOUSE_LAYOUTS[MousePick()].grid ~= nil
 end
 
 local function Pages()
@@ -115,15 +116,11 @@ end
 local function Last() return #Pages() end
 local function PageName() return Pages()[page] or "done" end
 
-local function MouseText(pick)
-    return pick and ("A mouse: " .. MOUSE_LAYOUTS[pick].name) or "Rows of icons (no mouse picture)"
-end
-
 local function MouseItems()
     local now = MousePick()
-    local items = { { text = MouseText(false), value = false, current = not now } }
-    for _, id in ipairs(MOUSE_ORDER or {}) do
-        items[#items + 1] = { text = MouseText(id), value = id, current = id == now }
+    local items = {}
+    for _, id in ipairs(MOUSE_ORDER) do
+        items[#items + 1] = { text = MOUSE_LAYOUTS[id].name, value = id, current = id == now }
     end
     return items
 end
@@ -511,16 +508,12 @@ local function Build(parent, w)
     end)
     f.mouseLabel = NewText(f, 12)
     f.mouseLabel:SetPoint("TOPLEFT", 0, -149)
-    f.mouseLabel:SetText("The legend shows")
+    f.mouseLabel:SetText("Your mouse")
     f.mouse = NewButton(f, 360, 24)
     f.mouse:SetPoint("TOPLEFT", 120, -144)
     f.mouse:SetScript("OnClick", function(self)
         ShowMenu(self, MouseItems(), function(value)
-            if value then
-                SetSettings({ layout = "mouse", mousePic = value })
-            elseif MousePick() then
-                SetSettings({ layout = "horizontal" })
-            end
+            SetSettings({ mousePic = value })
             Refresh()
         end, { width = 360 })
     end)
@@ -528,7 +521,7 @@ local function Build(parent, w)
     f.mouseNote:SetPoint("LEFT", f.mouse, "RIGHT", 10, 0)
     f.mouseNote:SetWidth(w - 490)
     f.mouseNote:SetJustifyH("LEFT")
-    f.mouseNote:SetText("A mouse picture draws your spells beside its buttons. Pick the one most like yours.")
+    f.mouseNote:SetText("The legend draws it small above each spell, with the button you bound lit up.")
     f.quickStart = NewButton(f, 200, 28, "Use it and turn on")
     f.quickStart:SetPoint("TOPLEFT", 0, -196)
     f.quickStart.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
@@ -699,7 +692,7 @@ local function Build(parent, w)
         opt.label = NewText(f, 12)
         opt.label:SetPoint("LEFT", opt.button, "RIGHT", 8, 0)
         opt.note = NewText(f, 10, 0.6, 0.6, 0.6)
-        opt.note:SetPoint("TOPLEFT", 54, y - 24)
+        opt.note:SetPoint("TOPLEFT", 54, y - 23)
         opt.note:SetWidth(w - 54)
         opt.note:SetJustifyH("LEFT")
         function opt.SetShown(shown)
@@ -708,17 +701,23 @@ local function Build(parent, w)
         f.opts[id] = opt
         return opt
     end
-    Option("hover", -110, function()
+    Option("hover", -100, function()
         local count, anywhere = KeyboardKeys()
         Edit.SetHoverKeys(not (count > 0 and anywhere == count))
     end)
-    Option("spec", -180, function()
+    Option("spec", -156, function()
         local _, _, own = SpecState()
         SetSpecOnly(not own)
     end)
-    Option("down", -250, function()
+    Option("down", -212, function()
         local settings = CastSettings()
         if settings then SetCastDown(not settings.down) end
+    end)
+    Option("picture", -268, function()
+        SetSettings({ layout = db.layout == "mouse" and "horizontal" or "mouse" })
+    end)
+    Option("tooltip", -324, function()
+        SetSettings({ tooltip = not db.tooltip })
     end)
 
     -- Step 5: the summary.
@@ -868,6 +867,12 @@ local function ShowOptions(f, shown)
     local settings = CastSettings()
     Set(f.opts.down, settings and settings.down, "Cast as the mouse button goes down",
         "On: a click on a unit frame casts at once. Off: when you let the button go, as the game does.")
+    if db then
+        Set(f.opts.picture, db.layout == "mouse", "Show the legend as one large picture of your mouse",
+            "On: a large mouse with each button's spells beside it. Off: rows of spell icons, a small mouse above each.")
+        Set(f.opts.tooltip, db.tooltip, "List your bindings in unit tooltips",
+            "On: the tooltip of a unit frame under the cursor lists what each key does there. Off: tooltips are left alone.")
+    end
 end
 
 Refresh = function()
@@ -895,7 +900,7 @@ Refresh = function()
         f.head:SetText("Where to start")
         f.text:SetText("Pick a ready-made set for your class, the set you already use, or nothing.")
         f.start.label:SetText(StartText(value))
-        f.mouse.label:SetText(MouseText(MousePick()))
+        f.mouse.label:SetText(MOUSE_LAYOUTS[MousePick()].name)
     elseif onSide then
         f.head:SetText("Your side buttons")
         f.text:SetText("Press each of the twelve side buttons in turn: top row first, left to right. "
@@ -911,7 +916,7 @@ Refresh = function()
             or "Nothing is switched on. Go back and switch on the buttons you want to set up.")
     elseif onOptions then
         f.head:SetText("Options")
-        f.text:SetText("Three things people often ask for. Leave them as they are if you are not sure; "
+        f.text:SetText("Things people often ask for. Leave them as they are if you are not sure; "
             .. "all of them can be changed later in the Bindings tab.")
     else
         local set, name = ActiveSet()

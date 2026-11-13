@@ -295,11 +295,39 @@ local function GetCaption(i)
     return fs
 end
 
+-- The key each region of a mouse picture shows. A block of side buttons
+-- shows what the player's own buttons send, once the guided setup has
+-- learned that; until then they are taken to be mouse buttons 4 and up.
+local function MouseKeys(L)
+    local learned = L.grid and SideKeys() or nil
+    if not (learned and next(learned)) then return L.keys end
+    local inBlock, keys = {}, {}
+    for _, region in ipairs(L.grid.regions) do inBlock[region] = true end
+    for key, region in pairs(L.keys) do
+        if not inBlock[region] then keys[key] = region end
+    end
+    for n, key in pairs(learned) do
+        if L.grid.regions[n] then keys[key] = L.grid.regions[n] end
+    end
+    return keys
+end
+
 -------------------------------------------------------------------------------
 --  Label glyphs: the "Icons" label style draws a small mouse with the bound
---  button lit, and a keycap for keyboard keys. Built from plain colored
---  rectangles, no image files.
+--  button lit, and a keycap for keyboard keys. The mouse is the picked
+--  picture (MouseLayout.lua): one image holds the whole mouse and each of
+--  its buttons on its own, and the button is drawn over the mouse in white.
+--  The keycap, and the mouse when there is no picture, are plain coloured
+--  rectangles.
 -------------------------------------------------------------------------------
+-- Shows one cell of a picture's small image in a texture.
+local function ShowCell(tex, small, cell)
+    local n = small.columns
+    local col, row = cell % n, floor(cell / n)
+    tex:SetTexture(small.texture)
+    tex:SetTexCoord(col / n, (col + 1) / n, row / n, (row + 1) / n)
+    tex:Show()
+end
 -- Width, height, half width and button-zone height of the mouse body.
 local function GlyphSize()
     local gh = db.labelSize + 5
@@ -310,7 +338,7 @@ end
 -- The height the label row needs (horizontal layout) for the current style.
 local function LabelHeight()
     if not db.labels or db.labelStyle == "corner" then return 0 end
-    if db.labelStyle == "icon" then return db.labelSize + 9 end
+    if db.labelStyle == "icon" then return db.labelSize + 12 end
     return db.labelSize + 3
 end
 
@@ -337,6 +365,10 @@ local function GetGlyph(i)
         g.lit = Rect("OVERLAY", 1, 1, 1)
         g.tri = { Rect("OVERLAY", 1, 1, 1), Rect("OVERLAY", 1, 1, 1), Rect("OVERLAY", 1, 1, 1) }
         g.num = g:CreateFontString(nil, "OVERLAY")
+        g.art = g:CreateTexture(nil, "BORDER")              -- the mouse picture, and the lit button over it
+        g.art:SetAllPoints()
+        g.artLit = g:CreateTexture(nil, "ARTWORK")
+        g.artLit:SetAllPoints()
         glyphs[i] = g
     end
     return g
@@ -365,6 +397,42 @@ local function DrawGlyph(g, key)
     g.divider:Hide()
     g.line:Hide()
     for _, t in ipairs(g.tri) do t:Hide() end
+    g.art:Hide()
+    g.artLit:Hide()
+    g.outline:Show()
+    g.body:Show()
+
+    -- The picture of the mouse, with this key's button lit. A key the mouse
+    -- has no button for falls through to the drawn ones below: a keycap for
+    -- a keyboard key, the mouse with a number for an extra mouse button.
+    local L = MOUSE and (MOUSE[db.mousePic] or MOUSE.a)
+    local small = L and L.small
+    local region = small and MouseKeys(L)[key]
+    local cell = region and small.cells[region]
+    if cell or (small and MouseRank(key)) then
+        local side = gh + 6                                 -- square: the picture carries its own margins
+        g:SetSize(side, side)
+        g.outline:Hide()
+        g.body:Hide()
+        ShowCell(g.art, small, 0)
+        if g.art.SetVertexColor then g.art:SetVertexColor(0.55, 0.57, 0.62) end
+        if cell then
+            ShowCell(g.artLit, small, cell)
+            if key == "MOUSEWHEELUP" or key == "MOUSEWHEELDOWN" then
+                -- The wheel alone would read as a middle click: an arrow in the
+                -- palm says which way it turns.
+                local top = floor(side * 0.62)
+                for row = 1, 3 do
+                    local w = (key == "MOUSEWHEELUP") and (row * 2 - 1) or (7 - row * 2)
+                    GlyphRect(g, g.tri[row], (side - 2) / 2 - (w - 1) / 2 - 0.5, top + row - 1, w, 1)
+                end
+            end
+        else
+            local n = key:match("^BUTTON(%d+)$")                    -- a button the picture does not have
+            GlyphText(g, n or "", max(6, db.labelSize - 2), (side - 2) / 2, side * 0.68)
+        end
+        return
+    end
 
     if not MouseRank(key) then
         -- A keyboard key: a keycap wide enough for its name.
@@ -719,23 +787,6 @@ local function StackColumn(col, vgap, bottom)
         ceilY = e.top - vgap
     end
     return col[1] and col[1].top or 0
-end
-
--- The key each region of a picture shows. A block of side buttons shows what
--- the player's own buttons send, once the guided setup has learned that;
--- until then they are taken to be mouse buttons 4 and up.
-local function MouseKeys(L)
-    local learned = L.grid and SideKeys() or nil
-    if not (learned and next(learned)) then return L.keys end
-    local inBlock, keys = {}, {}
-    for _, region in ipairs(L.grid.regions) do inBlock[region] = true end
-    for key, region in pairs(L.keys) do
-        if not inBlock[region] then keys[key] = region end
-    end
-    for n, key in pairs(learned) do
-        if L.grid.regions[n] then keys[key] = L.grid.regions[n] end
-    end
-    return keys
 end
 
 local function LayoutMouse(draw, sec, ox, oy)

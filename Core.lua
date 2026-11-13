@@ -70,7 +70,7 @@ local DEFAULTS = {
     point = "CENTER", relPoint = "CENTER", x = 0, y = -180,
     scale = 1, alpha = 1, iconSize = 28, spacing = 2,
     locked = false, hidden = false, labels = true, labelSize = 9, bars = true,
-    labelStyle = "text",        -- text | icon | corner
+    labelStyle = "icon",        -- text | icon | corner
     visibility = "always",      -- always | group | combat | hover
     source = "auto",            -- auto | own | eui | clique | vuhdo | healbot | blizzard
     layers = "held",            -- held | all: which modifier layers are drawn
@@ -86,9 +86,9 @@ local DEFAULTS = {
     enemyR = 0.90, enemyG = 0.25, enemyB = 0.25,
     background = false, bgR = 0.04, bgG = 0.04, bgB = 0.04, bgA = 0.6, bgPadding = 4,
     tooltip = true, tooltipWorld = false,
-    layout = "mouse",           -- horizontal | vertical | mouse
+    layout = "horizontal",      -- horizontal | vertical | mouse
     mouseSize = 128,            -- the mouse picture's width and height, for the "mouse" layout
-    mousePic = "a",             -- a | b | c | d: which mouse is drawn (MouseLayout.lua)
+    mousePic = "a",             -- a | b | c | d: which mouse is drawn, in the labels and in the "mouse" layout
     rows = "both",              -- both | ally | enemy
     enemyFirst = false,
     sort = "mouse",             -- mouse | keyboard | alpha | custom

@@ -89,8 +89,9 @@ local OPTIONS = {
         { kind = "choice", key = "mousePic", text = "Which mouse",
           values = { a = "Rounded", b = "Angular", c = "Simple", d = "Twelve side buttons" },
           order = { "a", "b", "c", "d" },
-          tip = "The mouse drawn by the Mouse picture layout. For the one with twelve side buttons, "
-              .. "the guided setup asks you to press each of them, so that every spell lands on the right one." },
+          tip = "The mouse that is drawn: small, above each spell, with the bound button lit (label style Icons), "
+              .. "and large in the Mouse picture layout. For the one with twelve side buttons, the guided setup "
+              .. "asks you to press each of them, so that every spell lands on the right one." },
         { kind = "range", key = "mouseSize", text = "Mouse picture size", lo = 96, hi = 256, step = 8 },
         { kind = "choice", key = "rows", text = "Show",
           values = { both = "Ally and enemy", ally = "Ally only", enemy = "Enemy only" },
@@ -146,7 +147,7 @@ local OPTIONS = {
         { kind = "toggle", key = "labels", text = "Button labels" },
         { kind = "choice", key = "labelStyle", text = "Label style",
           values = { text = "Text", icon = "Icons", corner = "On the icon" }, order = { "text", "icon", "corner" },
-          tip = "Icons draw a small mouse with the bound button lit, and a keycap for keyboard keys. "
+          tip = "Icons draw a small picture of your mouse with the bound button lit, and a keycap for keyboard keys. "
               .. "On the icon writes the key in the corner of the spell icon, which makes the legend smaller." },
         { kind = "range", key = "labelSize", text = "Label size", lo = 7, hi = 14, step = 1 },
         { kind = "toggle", key = "bars", text = "Ally / enemy color bars" },

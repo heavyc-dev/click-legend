@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.2
+- The small mouse above each spell (label style "Icons") is now a picture of your mouse with the bound button lit, in place of the drawn one. Pick which mouse on the first page of the guided setup, or on the Display tab.
+- A new install starts as rows of spell icons with that small mouse above each. The large "Mouse picture" layout, which 2.1.1 started new installs with, is an option again: Display, Layout, or the options page of the guided setup. If you installed 2.1.1 fresh and want the rows, that is where to switch.
+- The guided setup's options page can also switch off the bindings in unit tooltips (as the Display tab and `/clg tooltip` already could).
+
 ## 2.1.1
 - If you already had ClickLegend set up, a window now tells you once what 2.1 added and offers to go through the guided setup again. It starts from the keys you have and changes only what you change. `/clg news` shows it again.
 - A new install now starts with the legend as a picture of a mouse (the rounded one) instead of rows of icons. If you already use ClickLegend your layout stays as it is: Display, Layout changes it, and the guided setup asks on its first page.

@@ -12,13 +12,15 @@ The legend
   - Hold Shift / Ctrl / Alt to see that modifier's bindings
   - Unit tooltips list the bindings for the hovered frame: ally spells on a
     friendly frame, enemy spells on an attackable one
-  - "Mouse picture" layout: a mouse with each button's spells beside it.
-    Four mice to pick from, one with twelve side buttons; the guided setup
-    asks you to press those, so it learns what your mouse sends
+  - "Mouse picture" layout, if you prefer it to rows: one large mouse with
+    each button's spells beside it
+  - One of the mice has twelve side buttons; the guided setup asks you to
+    press those, so it learns what your mouse sends
   - Horizontal or vertical layout, wrapping, ally/enemy filter and order,
     and four ways to sort the buttons, including a custom order
-  - Button labels as text (L, R, M4), as small mouse icons, or written on
-    the corner of the spell icon
+  - Button labels as a small picture of your mouse with the bound button
+    lit (four mice to pick from), as text (L, R, M4), or written on the
+    corner of the spell icon
   - Optional background with your own color, opacity and padding
   - Show always, only in a group, only in combat, or only while hovering a
     unit frame
