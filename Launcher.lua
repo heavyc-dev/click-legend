@@ -2,8 +2,9 @@
 --  ClickLegend - Launcher.lua
 --  Two ways in for someone who has not typed /clg yet: a minimap button with
 --  the addon's logo, and a welcome window shown once after installing or
---  updating to 2.0. Someone who has already seen that window gets one line
---  in chat, once, when an update brings something worth knowing about.
+--  updating to 2.0. Someone who has already seen that window gets the same
+--  window once more, saying what is new and offering the guided setup again,
+--  when an update brings something worth knowing about.
 -------------------------------------------------------------------------------
 local _, ns = ...
 
@@ -15,8 +16,8 @@ ns.Subscribe("db", function(value) db = value end)
 
 local ACCENT, ApplyFont, NewButton, NewText, Safe =
     ns.ACCENT, ns.ApplyFont, ns.NewButton, ns.NewText, ns.Safe
-local OpenGuidedSetup, ToggleWindow, Print =
-    ns.OpenGuidedSetup, ns.ToggleWindow, ns.Print
+local OpenGuidedSetup, ToggleWindow =
+    ns.OpenGuidedSetup, ns.ToggleWindow
 
 local LOGO = "Interface\\AddOns\\ClickLegend\\ClickLegend-Logo.png"
 -- The logo is the legend's grid on a dark square; this is the grid alone.
@@ -131,16 +132,13 @@ local function BuildWelcome()
     logo:SetTexture(LOGO)
     logo:SetTexCoord(LOGO_CROP[1], LOGO_CROP[2], LOGO_CROP[3], LOGO_CROP[4])
 
+    -- What it says is set each time it is shown: the welcome, or what is new.
     local title = NewText(f, 16, ACCENT[1], ACCENT[2], ACCENT[3])
     title:SetPoint("TOP", 0, -86)
-    title:SetText("Welcome to ClickLegend")
     local text = NewText(f, 11, 0.85, 0.85, 0.85)
     text:SetPoint("TOP", 0, -112)
     text:SetWidth(340)
-    text:SetText("The legend shows what your click-cast keys do. It can also do the click casting itself, "
-        .. "with rules like \"dead ally: resurrect, ally: heal, enemy: damage\" on one key.\n\n"
-        .. "Guided setup starts from a ready-made set for your class: two clicks and it is on. "
-        .. "You can open either one later with /clg or the minimap button.")
+    f.title, f.text = title, text
 
     local guide = NewButton(f, 130, 26, "Guided setup")
     guide:SetPoint("BOTTOMLEFT", 16, 16)
@@ -156,32 +154,58 @@ local function BuildWelcome()
     return f
 end
 
--- Shows the welcome window; `again` shows it even when it has been seen.
-local function ShowWelcome(again)
-    if type(ClickLegendCastDB) ~= "table" then return false end
-    if not again and (ClickLegendCastDB.welcomed or 0) >= WELCOME_VERSION then return false end
+local WELCOME_TEXT = "The legend shows what your click-cast keys do. It can also do the click casting itself, "
+    .. "with rules like \"dead ally: resurrect, ally: heal, enemy: damage\" on one key.\n\n"
+    .. "Guided setup starts from a ready-made set for your class: two clicks and it is on. "
+    .. "You can open either one later with /clg or the minimap button."
+
+-- What is new, for someone who already uses the addon. Shown once per
+-- account for each NEWS_VERSION; raise it, and rewrite NEWS_TEXT, only when
+-- a release has something worth stopping a player for.
+local NEWS_VERSION = 2              -- 1: 2.1.0 (a line in chat), 2: 2.1.1 (this window)
+local NEWS_TEXT = "New since you set up:\n\n"
+    .. "- Guided setup in two clicks, from a ready-made set for your class\n"
+    .. "- Quickbind: point at a spell, press the key you want it on\n"
+    .. "- Keys that work on any unit under the cursor, not only unit frames\n"
+    .. "- The legend as a picture of your mouse, or beside your cursor\n"
+    .. "- Cooldowns, mana and range shown on the legend\n"
+    .. "- Undo, a set for each spec, Dispel and Resurrect for any class\n\n"
+    .. "Would you like to go through the setup again? It starts from the keys you have now, "
+    .. "and changes only what you change."
+
+-- The window, made on first use, saying one thing or the other.
+local function ShowCard(height, title, text, justify, guideLabel)
     if not welcome then
         local ok, built = pcall(BuildWelcome)
         if not ok then ns.Report(built); return false end
         welcome = built
     end
+    welcome:SetHeight(height)
+    welcome.title:SetText(title)
+    welcome.text:SetText(text)
+    welcome.text:SetJustifyH(justify)
+    welcome.guide.label:SetText(guideLabel)
     welcome:Show()
     return true
 end
 
--- What is new, in one line of chat, once per account for each NEWS_VERSION.
--- Not for someone who is being shown the welcome window: that says it all.
-local NEWS_VERSION = 1              -- 1: 2.1.0
-local NEWS = "new in this version: a two-click guided setup, Quickbind, keys that work on any unit under the "
-    .. "cursor, and a mouse picture for the legend. /clg setup to look around."
+-- Shows the welcome window; `again` shows it even when it has been seen.
+local function ShowWelcome(again)
+    if type(ClickLegendCastDB) ~= "table" then return false end
+    if not again and (ClickLegendCastDB.welcomed or 0) >= WELCOME_VERSION then return false end
+    return ShowCard(250, "Welcome to ClickLegend", WELCOME_TEXT, "CENTER", "Guided setup")
+end
 
-local function ShowNews(welcoming)
+-- Shows what is new, once; `again` shows it whether or not it has been seen.
+-- Someone being shown the welcome window (`welcoming`) is not shown this as
+-- well: the welcome says it all, and what is new is new to nobody then.
+local function ShowNews(again, welcoming)
     local store = ClickLegendCastDB
-    if type(store) ~= "table" or (tonumber(store.news) or 0) >= NEWS_VERSION then return false end
+    if type(store) ~= "table" then return false end
+    local seen = (tonumber(store.news) or 0) >= NEWS_VERSION
     store.news = NEWS_VERSION
-    if welcoming then return false end
-    Print(NEWS)
-    return true
+    if welcoming or (seen and not again) then return false end
+    return ShowCard(330, "What is new in ClickLegend", NEWS_TEXT, "LEFT", "Guided setup")
 end
 
 -- At login: the button at once, the welcome a moment later, when the rest
@@ -191,7 +215,7 @@ local function StartLauncher()
     local function Greet()
         local welcoming = false
         Safe(function() welcoming = ShowWelcome() end)
-        Safe(ShowNews, welcoming)
+        Safe(ShowNews, false, welcoming)
     end
     if C_Timer and C_Timer.After then
         C_Timer.After(3, Greet)
@@ -204,6 +228,7 @@ end
 --  Used by the other files
 -------------------------------------------------------------------------------
 ns.GetWelcome          = function() return welcome end
+ns.ShowNews            = ShowNews
 ns.ShowWelcome         = ShowWelcome
 ns.StartLauncher       = StartLauncher
 ns.UpdateMinimapButton = UpdateMinimapButton

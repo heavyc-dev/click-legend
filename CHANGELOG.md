@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.1
+- If you already had ClickLegend set up, a window now tells you once what 2.1 added and offers to go through the guided setup again. It starts from the keys you have and changes only what you change. `/clg news` shows it again.
+- A new install now starts with the legend as a picture of a mouse (the rounded one) instead of rows of icons. If you already use ClickLegend your layout stays as it is: Display, Layout changes it, and the guided setup asks on its first page.
+
 ## 2.1.0
 - Keys that work anywhere. A key can be set to work on any unit under the cursor (characters in the world, nameplates), not only on unit frames: edit the key and pick "Any unit under the cursor". ClickLegend then has that key all the time while its click casting is on, and warns when the game uses the key for something else. Plain left and right click stay on unit frames.
 - Quickbind: a list of your spells in the Bindings tab. Point at a spell and press a key or a mouse button, with Shift, Ctrl or Alt if you like, and the spell is on that key. Helpful spells go on allies, harmful ones on enemies, resurrections on dead allies.

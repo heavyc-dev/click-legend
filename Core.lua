@@ -86,7 +86,7 @@ local DEFAULTS = {
     enemyR = 0.90, enemyG = 0.25, enemyB = 0.25,
     background = false, bgR = 0.04, bgG = 0.04, bgB = 0.04, bgA = 0.6, bgPadding = 4,
     tooltip = true, tooltipWorld = false,
-    layout = "horizontal",      -- horizontal | vertical | mouse
+    layout = "mouse",           -- horizontal | vertical | mouse
     mouseSize = 128,            -- the mouse picture's width and height, for the "mouse" layout
     mousePic = "a",             -- a | b | c | d: which mouse is drawn (MouseLayout.lua)
     rows = "both",              -- both | ally | enemy

@@ -136,6 +136,7 @@ Commands
   /clg                          open or close the settings window
   /clg setup                    guided setup of its own click casting
   /clg welcome                  show the welcome window again
+  /clg news                     show what is new again
   /clg minimap                  show or hide the minimap button
   /clg help                     list commands
   /clg config                   settings in EllesmereUI (or the window without it)

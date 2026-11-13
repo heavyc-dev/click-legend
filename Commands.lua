@@ -77,7 +77,7 @@ end
 local function Help()
     Print("commands")
     print("  /clg menu - open the ClickLegend settings window")
-    print("  /clg setup - guided setup of ClickLegend's own click casting; /clg welcome - the welcome window")
+    print("  /clg setup - guided setup of ClickLegend's own click casting; /clg welcome | news - the welcome window, what is new")
     print("  /clg minimap - show or hide the minimap button")
     print("  /clg config - open the settings in EllesmereUI (or the window without it)")
     print("  /clg lock | unlock - lock in place, or unlock to drag")
@@ -231,6 +231,7 @@ local ACTIONS = {
     menu = function() ToggleWindow() end,
     setup = function() OpenGuidedSetup() end,
     welcome = function() ShowWelcome(true) end,
+    news = function() ns.ShowNews(true) end,              -- Launcher.lua
     -- EllesmereUI's panel when it is there (it does not open in combat), the
     -- addon's own window otherwise.
     config = function()
