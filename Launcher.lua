@@ -154,8 +154,9 @@ local function BuildWelcome()
     return f
 end
 
-local WELCOME_TEXT = "The legend shows what your click-cast keys do. It can also do the click casting itself, "
-    .. "with rules like \"dead ally: resurrect, ally: heal, enemy: damage\" on one key.\n\n"
+local WELCOME_TEXT = "Click casting: click a player's unit frame to cast on them, without targeting them first. "
+    .. "ClickLegend does it with rules, like \"dead ally: resurrect, ally: heal, enemy: damage\" on one key, "
+    .. "and shows what every key does in a legend on screen.\n\n"
     .. "Guided setup starts from a ready-made set for your class: two clicks and it is on. "
     .. "You can open either one later with /clg or the minimap button."
 
@@ -193,7 +194,7 @@ end
 local function ShowWelcome(again)
     if type(ClickLegendCastDB) ~= "table" then return false end
     if not again and (ClickLegendCastDB.welcomed or 0) >= WELCOME_VERSION then return false end
-    return ShowCard(250, "Welcome to ClickLegend", WELCOME_TEXT, "CENTER", "Guided setup")
+    return ShowCard(280, "Welcome to ClickLegend", WELCOME_TEXT, "CENTER", "Guided setup")
 end
 
 -- Shows what is new, once; `again` shows it whether or not it has been seen.
@@ -205,7 +206,7 @@ local function ShowNews(again, welcoming)
     local seen = (tonumber(store.news) or 0) >= NEWS_VERSION
     store.news = NEWS_VERSION
     if welcoming or (seen and not again) then return false end
-    return ShowCard(330, "What is new in ClickLegend", NEWS_TEXT, "LEFT", "Guided setup")
+    return ShowCard(390, "What is new in ClickLegend", NEWS_TEXT, "LEFT", "Guided setup")
 end
 
 -- At login: the button at once, the welcome a moment later, when the rest

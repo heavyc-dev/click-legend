@@ -43,7 +43,16 @@ local function RefreshEditor() ns.RefreshEditor() end                           
 
 local WIN_W, WIN_H, ROW_H, WIN_PAD = 400, 520, 26, 16
 local WIN_BIND_W = 680              -- the Bindings tab is wider: keys on the left, a key's rules on the right
-local activeTab = "Display"
+local activeTab = nil               -- chosen when the window first opens (FirstTab)
+local function ShowMenu(...) return ns.ShowMenu(...) end                           -- Picker.lua
+
+-- The tab the window first opens on: the bindings, unless the legend is
+-- showing another addon's and ClickLegend's own click casting is off.
+local function FirstTab()
+    local settings = ns.CastSettings and ns.CastSettings()
+    if activeSource and not (settings and settings.enabled) then return "Display" end
+    return "Bindings"
+end
 
 local function NewText(parent, size, r, g, b)
     local fs = parent:CreateFontString(nil, "OVERLAY")
@@ -144,18 +153,15 @@ local function NewOptionRow(parent, o)
             end
         end
     elseif o.kind == "choice" then
-        -- Left click steps forward through the choices, right click back.
+        -- A click lists the choices to pick from.
         local b = NewButton(row, 160, 20)
         b:SetPoint("RIGHT")
-        b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        b:SetScript("OnClick", function(_, button)
-            local index = 1
+        b:SetScript("OnClick", function(self)
+            local items = {}
             for i, value in ipairs(o.order) do
-                if value == db[o.key] then index = i; break end
+                items[i] = { text = o.values[value], value = value, current = value == db[o.key] }
             end
-            index = index + (button == "RightButton" and -1 or 1)
-            if index > #o.order then index = 1 elseif index < 1 then index = #o.order end
-            OptSet(o, o.order[index])
+            ShowMenu(self, items, function(value) OptSet(o, value) end, { width = 200 })
         end)
         row.Update = function() b.label:SetText(o.values[db[o.key]] or "?") end
     elseif o.kind == "range" then
@@ -253,7 +259,10 @@ local function BuildWindow()
     local close = NewButton(f, 22, 22, "X")
     close:SetPoint("TOPRIGHT", -8, -8)
     close:SetScript("OnClick", function() f:Hide(); CloseOverlays() end)
-    f:SetScript("OnHide", CloseOverlays)             -- Escape closes the window too
+    f:SetScript("OnHide", function()                 -- Escape closes the window too
+        CloseOverlays()
+        ns.Render()                                  -- an empty legend is only shown while this is open
+    end)
 
     f.tabs = {}
     for i, name in ipairs(PANEL_PAGES) do
@@ -451,6 +460,7 @@ ToggleWindow = function(forceOpen)
         if not ok then Report(built); return end
         window = built
     end
+    if not activeTab then activeTab = FirstTab() end
     if window:IsShown() and not forceOpen then
         window:Hide()
         CloseOverlays()
@@ -458,6 +468,7 @@ ToggleWindow = function(forceOpen)
     end
     window:Show()
     RefreshWindow()
+    ns.Render()
 end
 
 OpenShareTab = function()

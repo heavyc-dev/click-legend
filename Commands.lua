@@ -328,6 +328,8 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         return
     end
     if not db then return end
+    -- Both of these fire for every unit in the raid; only the player's count.
+    if event == "UNIT_PET" and arg1 ~= "player" then return end
     if event == "UNIT_SPELLCAST_SUCCEEDED" then
         if arg1 == "player" then Safe(ns.SpellCast, arg3) end        -- Display.lua
         return
@@ -338,7 +340,8 @@ events:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
         Safe(UpdateProvider)
         Safe(StartLauncher)
         StartPolling()
-        if not db.locked then
+        if not db.locked and not db.dragHint then
+            db.dragHint = true          -- said once, not at every login
             Print("drag the legend where you want it, then type /clg lock. /clg for settings.")
         end
     elseif event == "MODIFIER_STATE_CHANGED" then

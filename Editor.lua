@@ -36,6 +36,7 @@ local AddSet, BuildTemplate, ExportSet, ImportSet =
     ns.AddSet, ns.BuildTemplate, ns.ExportSet, ns.ImportSet
 local ListTemplates, RuleUnavailable, RenameSet =
     ns.ListTemplates, ns.RuleUnavailable, ns.RenameSet
+local CopyFromSource, CopySources = ns.CopyFromSource, ns.CopySources
 local BoundKeys, PresetSpell, SetSpecOnly, SpecState =
     ns.BoundKeys, ns.PresetSpell, ns.SetSpecOnly, ns.SpecState
 local PRE_ORDER, SetCastDown, CanUndo, Undo =
@@ -386,6 +387,7 @@ local function NewKeyRow(parent, w)
     row.key:SetPoint("LEFT", 4, 0)
     row.key:SetWidth(108)
     row.key:SetJustifyH("LEFT")
+    row.key:SetWordWrap(false)                  -- a long name is cut short; the tooltip has it whole
     row.ally = NewSideIcon(row, 116, ALLY_COLOR)
     row.enemy = NewSideIcon(row, 136, ENEMY_COLOR)
     row.edit = row                              -- the whole row is the way in
@@ -619,6 +621,7 @@ local function NewQuickRow(parent, w)
     row.keys:SetPoint("RIGHT", row.clear, "LEFT", -4, 0)
     row.keys:SetWidth(140)
     row.keys:SetJustifyH("RIGHT")
+    row.keys:SetWordWrap(false)
     row:RegisterForClicks("AnyUp")
     row:SetScript("OnEnter", function(self)
         hovered = self
@@ -679,6 +682,8 @@ local function Build(parent, w)
     setText:SetText("Set")
     f.set = NewButton(f, 180, 20)
     f.set:SetPoint("TOPLEFT", 30, -28)
+    f.set.label:SetWidth(172)                   -- a long name is cut short, not spilled over New...
+    f.set.label:SetWordWrap(false)
     f.set:SetScript("OnClick", function(self)
         local _, current = ActiveSet()
         local items = {}
@@ -698,6 +703,10 @@ local function Build(parent, w)
     f.new:SetPoint("LEFT", f.set, "RIGHT", 4, 0)
     f.new:SetScript("OnClick", function(self)
         local items = { { text = "Empty set", value = "empty" } }
+        -- What another click-cast addon, or the game's own Click Casting, has now.
+        for _, source in ipairs(CopySources()) do
+            items[#items + 1] = { text = "Copy from " .. source.name, value = { copy = source.id }, note = "what it binds now" }
+        end
         local templates, class = ListTemplates()
         for _, template in ipairs(templates) do
             items[#items + 1] = { text = template.name, value = template,
@@ -710,6 +719,19 @@ local function Build(parent, w)
                 f.nameBox:SetFocus()
                 return
             end
+            if value.copy then
+                local name, count, left = CopyFromSource(value.copy)
+                if name then
+                    editing = nil
+                    SelectSet(name)
+                    Say(false, name .. ": " .. count .. " keys copied"
+                        .. (left > 0 and (", " .. left .. " left out (not a spell, a macro, Target or Menu)") or "")
+                        .. ". Switch the other click casting off before you turn this on.")
+                else
+                    Say(false, count)
+                end
+                return
+            end
             local name = AddSet(value.name, BuildTemplate(value))
             if name then
                 editing = nil
@@ -718,7 +740,8 @@ local function Build(parent, w)
             end
         end, { width = 230 })
     end)
-    Tip(f.new, "Make a set: empty, or starting from a template for a class.")
+    Tip(f.new, "Make a set: empty, a copy of what another click-cast addon or the game's Click Casting binds now, "
+        .. "or starting from a template for a class.")
 
     -- More: what can be done with the set in use.
     f.more = NewButton(f, 60, 20, "More...")
@@ -1013,12 +1036,15 @@ local function Build(parent, w)
         if not binding then return end
         ShowMenu(self, {
             { text = "Unit frames only", value = false, current = not binding.hover },
-            { text = "Any unit under the cursor", value = true, current = binding.hover and true or false },
-        }, function(value) Say(Edit.SetHover(editing, value)) end, { width = 190 })
+            { text = "Any unit under the cursor", value = "hover", current = (binding.hover and not binding.orTarget) and true or false },
+            { text = "Under the cursor, else my target", value = "target", current = (binding.hover and binding.orTarget) and true or false },
+        }, function(value) Say(Edit.SetHover(editing, value ~= false, value == "target")) end, { width = 230 })
     end)
     Tip(f.hover, "Where this key works. Unit frames only: while the cursor is on a unit frame. "
-        .. "Any unit under the cursor: also on characters in the world and on nameplates. ClickLegend then has "
-        .. "the key all the time, so pick one you use for nothing else. Plain left and right click cannot be set this way.")
+        .. "Any unit under the cursor: also on characters in the world and on nameplates. "
+        .. "Else my target: with nothing fitting under the cursor the same spells go to your target, so the key is never dead. "
+        .. "Either way ClickLegend has the key all the time, and what the game had on it stops. "
+        .. "Plain left and right click cannot be set this way.")
     f.problemLines = {}
     f.problems = NewLine(f, rw, 0.95, 0.4, 0.4, function() return f.problemLines end)
     f.problems:SetPoint("BOTTOMLEFT", x0, 20)
@@ -1084,6 +1110,16 @@ local function Build(parent, w)
         if key == "ESCAPE" then Captured(nil) elseif not MODIFIER_KEY[key] then Captured(key) end
     end)
     catcher:SetScript("OnClick", function(_, mouse)
+        -- The catcher lies over the buttons that started it. A plain left click
+        -- on one of those is the player stopping, not binding plain left click.
+        if mouse == "LeftButton" and HeldMods() == "" then
+            for _, button in ipairs({ f.add, f.change, f.quick }) do
+                if button:IsShown() and button.IsMouseOver and button:IsMouseOver() == true then
+                    Captured(nil)
+                    return
+                end
+            end
+        end
         Captured(MOUSE_KEY[mouse] or (type(mouse) == "string" and mouse:upper()) or nil)
     end)
     catcher:SetScript("OnMouseWheel", function(_, delta)
@@ -1195,7 +1231,8 @@ local function ShowRules(f, binding)
     f.ruleScroll:Show(); f.addRule:Show(); f.problems:Show(); f.hover:Show(); f.pre:Show(); f.change:Show()
     f.paneHead:SetText(KeyName(binding.key))
     f.change.label:SetText(capture == "change" and "Press a key or button (Esc)" or "Change the key")
-    f.hover.label:SetText(binding.hover and "Works anywhere" or "Unit frames only")
+    f.hover.label:SetText(not binding.hover and "Unit frames only"
+        or binding.orTarget and "Anywhere, else target" or "Works anywhere")
     local extras = 0
     for _, what in ipairs(PRE_ORDER) do
         if binding.pre and binding.pre[what] then extras = extras + 1 end
@@ -1258,7 +1295,7 @@ local function ShowRules(f, binding)
                 row.choice.icon:SetTexture(entry.icon)
                 row.choice.icon:Show()
                 if RuleUnavailable(rule) then
-                    row.shown = row.shown .. "  (not known: skipped)"
+                    row.shown = "(not known) " .. row.shown     -- in front: the end of a long name is cut off
                     row.choice.label:SetTextColor(0.55, 0.55, 0.55)
                 else
                     row.choice.label:SetTextColor(1, 1, 1)
@@ -1287,7 +1324,7 @@ local function ShowRules(f, binding)
     -- The room a key uses only matters when it is running out.
     local length = compiled.length or 0
     f.room:SetShown(length > ROOM_WARN)
-    f.room:SetText(length .. " of " .. MACRO_LIMIT .. " characters")
+    f.room:SetText(length .. "/" .. MACRO_LIMIT)       -- short: "Before cast" stands just right of it
     if compiled.tooLong then f.room:SetTextColor(0.95, 0.4, 0.4) else f.room:SetTextColor(0.95, 0.55, 0.3) end
     local lines = {}
     for _, problem in ipairs(compiled.problems) do lines[#lines + 1] = problem end
@@ -1358,6 +1395,8 @@ Refresh = function()
         if message then notes[#notes + 1] = message end
         if settings.enabled then
             for _, conflict in ipairs(CastConflicts()) do notes[#notes + 1] = conflict end
+        elseif not message and ns.CastBlocked() then
+            notes[1] = ns.CastBlocked()
         elseif not message and set and #set.bindings > 0 then
             notes[1] = "Click casting is off: these keys do nothing yet."
             yes = "Turn on"

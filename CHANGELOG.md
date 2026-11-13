@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.1.3
+New:
+- A key that works anywhere can go on to your target: Edit the key, "Under the cursor, else my target". With nothing fitting under the cursor the same spells are cast on your target, so the key is no longer dead away from a unit. The guided setup's "Keyboard keys work on any unit under the cursor" now sets this too. It needs a key whose rules are all spells or items, and room in the key's 255 characters; the editor says when it cannot be done.
+- Copy your bindings from another click-cast addon: New... (and the first page of the guided setup) offers "Copy from" for whatever ClickLegend can read right now: Clique, VuhDo, HealBot, EllesmereUI HoverCast, the game's own Click Casting. A spell for allies and another for enemies on one key become two rules. An addon's own actions and anything that is not a spell, a macro, Target or Menu are left out, and you are told how many. Switch the other click casting off before you turn ClickLegend's on.
+
+Fixed:
+- After "Use it and turn on", the last page of the guided setup now says what changed: which spell plain left and right click cast on an ally, and which keys target and open the menu instead (Alt + Left and Alt + Right in the starter sets). It also names game key bindings that keys working anywhere have taken over, as the options page now does before you switch that on.
+- The button on that page reads "Turn click casting off" when it is on. It used to read "Click casting is on" and switched it off when clicked.
+- While ClickLegend waits for a key ("Add a key", "Change the key"), a plain left click on that same button stops it. It used to bind plain left click.
+- Keyboard and wheel keys could stop working on the frame under the cursor when some other unit frame hid (a target's target, a pet, a raid member leaving).
+- Mouse buttons past the fifth were written to unit frames as clicks, which a frame never receives, so they did nothing. They are bound like keyboard keys now.
+- A unit frame made during combat by ElvUI or Grid2 lost every key that also opens the unit menu, which in the starter sets is right click with its heal. Such a key now casts at once and gets its menu when combat ends.
+- A key with many rules that also opens the menu or casts an exact rank could be counted as fitting in 255 characters and then run past them. The helper names are short now.
+- A set imported from text could carry a spell name with a line break or bracket in it, which put extra macro lines on the key behind a plain spell name. Such a rule is refused.
+- The legend re-read every binding each time any raid member's pet changed.
+- The legend no longer puts an empty box on screen when nothing is bound anywhere (it shows while the settings window is open, so that it can still be placed), and the "drag the legend" line in chat is said once, not at every login.
+- The editor now says when a rule can never fire because a rule above it fits every time it would (an "ally" rule above an "ally, in combat" rule, say).
+- Long names no longer run over what stands beside them in the Bindings tab: a set's name, a key's name, the keys in Quickbind. A spell you do not know is marked in front of its name, where it cannot be cut off. The character count is shorter and no longer sits under "Before cast". The welcome and what's-new windows are taller, so their text clears the buttons.
+
+Changed:
+- With Clique loaded, ClickLegend's click casting stays off and says why, instead of only warning: both wrote to the same frames, and each ended up with some of them. Switch Clique off in the AddOns list and reload to use ClickLegend's; New... copies your Clique bindings first. The legend still shows your Clique bindings as before.
+- The settings window has the Bindings tab first, and opens on it unless the legend is showing another addon's bindings and ClickLegend's click casting is off. The welcome window explains click casting first.
+- In the settings window a choice (Layout, Label style, Bindings from, and the rest) now opens a list to pick from. It used to step to the next value on each click.
+- Starter sets (for new sets only; a set you already made is not touched): the druid sets no longer put Rebirth on the main heal key, where clicking on through a death would spend it on whoever died under the cursor. It is on Ctrl + Right Click, and plain left click on a dead ally resurrects out of combat only. The mage set leaves plain left and right click alone, so a click on a party member still targets them; Remove Lesser Curse is on the middle button and Arcane Intellect on Shift + Left Click.
+
+Changed for people who already use ClickLegend:
+- Once, at your first login with this version: text labels become the small mouse picture (the default since 2.1.2), and a legend that was the large mouse picture goes back to rows. Text labels: Display, Label style. The large picture: Display, Layout. A choice you make after that stays.
+- The "Default" preset uses the small mouse labels too.
+
 ## 2.1.2
 - The small mouse above each spell (label style "Icons") is now a picture of your mouse with the bound button lit, in place of the drawn one. Pick which mouse on the first page of the guided setup, or on the Display tab.
 - A new install starts as rows of spell icons with that small mouse above each. The large "Mouse picture" layout, which 2.1.1 started new installs with, is an option again: Display, Layout, or the options page of the guided setup. If you installed 2.1.1 fresh and want the rows, that is where to switch.

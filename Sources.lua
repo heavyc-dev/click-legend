@@ -553,6 +553,21 @@ local SOURCES = {
     { id = "blizzard", name = "Click Casting", collect = CollectBlizzardLayers },
 }
 
+-- Every source but ClickLegend's own that has bindings right now, with what
+-- it holds: { id, name, layers }. For copying them into a set (Cast.lua).
+local function OtherSources()
+    local out = {}
+    for _, source in ipairs(SOURCES) do
+        if source.id ~= "own" then
+            local ok, found = pcall(source.collect)
+            if ok and type(found) == "table" and next(found) then
+                out[#out + 1] = { id = source.id, name = source.name, layers = found }
+            end
+        end
+    end
+    return out
+end
+
 -- Which system the legend is showing ("Clique", "VuhDo", ...), or nil.
 local activeSource
 
@@ -631,6 +646,7 @@ ns.CurrentSpecID    = CurrentSpecID
 ns.Entry            = Entry
 ns.InventoryTexture = InventoryTexture
 ns.MacroInfo        = MacroInfo
+ns.OtherSources     = OtherSources
 ns.PutEntry         = PutEntry
 ns.Signatures       = Signatures
 ns.SortedMods       = SortedMods

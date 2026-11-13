@@ -42,6 +42,7 @@ local KeyboardKeys, SetCastDown, SetSpecOnly, SpecState =
 local ClearSideKeys, SetSettings, SetSideKey, SideKeys =
     ns.ClearSideKeys, ns.SetSettings, ns.SetSideKey, ns.SideKeys
 local MOUSE_LAYOUTS, MOUSE_ORDER = ns.MOUSE_LAYOUTS, ns.MOUSE_ORDER
+local CopyFromSource, CopySources, Shadowed = ns.CopyFromSource, ns.CopySources, ns.CastShadowed
 
 local db
 ns.Subscribe("db", function(value) db = value end)
@@ -132,6 +133,11 @@ local function StartItems()
     local items = {}
     local _, name = ActiveSet()
     if name then items[#items + 1] = { text = "The set in use: " .. name, value = "keep" } end
+    -- What another click-cast addon, or the game's own Click Casting, has now.
+    for _, source in ipairs(CopySources()) do
+        items[#items + 1] = { text = "A copy of your " .. source.name .. " bindings",
+            value = { copy = source.id, name = "A copy of your " .. source.name .. " bindings" } }
+    end
     local templates, class = ListTemplates()
     for _, template in ipairs(templates) do
         items[#items + 1] = { text = template.name, value = template,
@@ -257,7 +263,9 @@ local function ApplyStart()
     local value = start or DefaultStart()
     if value == "keep" and ActiveSet() then return true end
     local name
-    if type(value) == "table" then
+    if type(value) == "table" and value.copy then
+        name = CopyFromSource(value.copy) or nil
+    elseif type(value) == "table" then
         name = AddSet(value.name, BuildTemplate(value))
     else
         local ok, made = false, nil
@@ -720,13 +728,21 @@ local function Build(parent, w)
         SetSettings({ tooltip = not db.tooltip })
     end)
 
-    -- Step 5: the summary.
+    -- Step 5: the summary. The button says what a click on it does; the
+    -- line beside it says how things stand.
     f.enable = NewButton(f, 200, 28)
     f.enable:SetPoint("TOPLEFT", 0, -130)
     f.enable:SetScript("OnClick", function()
         local settings = CastSettings()
         if settings then SetCastEnabled(not settings.enabled); Refresh() end
     end)
+    f.state = NewText(f, 12)
+    f.state:SetPoint("LEFT", f.enable, "RIGHT", 12, 0)
+    -- What is different from now on: the plain clicks, and keys taken from the game.
+    f.changes = NewText(f, 11, 0.85, 0.85, 0.85)
+    f.changes:SetPoint("TOPLEFT", 0, -176)
+    f.changes:SetWidth(w)
+    f.changes:SetJustifyH("LEFT")
 
     f.back = NewButton(f, 80, 24, "Back")
     f.back:SetPoint("BOTTOMLEFT", 0, 0)
@@ -839,6 +855,59 @@ local function ShowSide(f, shown)
     f.sideHeard:SetText(sideHeard or "")
 end
 
+-- The key of the set in use whose first rule does `kind` ("target", "menu")
+-- for everyone, by name; nil when there is none.
+local function KeyThatDoes(kind)
+    local set = ActiveSet()
+    for _, binding in ipairs(set and set.bindings or {}) do
+        local rule = binding.rules[1]
+        if rule and rule.action.type == kind and next(rule.when) == nil then return KeyName(binding.key) end
+    end
+    return nil
+end
+
+-- "1 (Action Button 1), 2 (Action Button 2) and 3 more": the game's key
+-- bindings that keys working anywhere have taken over. "" when there are none.
+local function TakenText()
+    local taken = Shadowed()
+    local parts = {}
+    for i = 1, #taken < 4 and #taken or 4 do
+        parts[i] = taken[i].key .. " (" .. taken[i].action .. ")"
+    end
+    if #parts == 0 then return "" end
+    return table.concat(parts, ", ") .. (#taken > 4 and (" and " .. (#taken - 4) .. " more") or "")
+end
+
+-- What the player has to know before the first click: a plain click that now
+-- casts, and where targeting and the menu went; keys the game no longer has.
+local PLAIN_CLICKS = {
+    { key = "BUTTON1", name = "Left click", kind = "target", does = "targets" },
+    { key = "BUTTON2", name = "Right click", kind = "menu", does = "opens the menu" },
+}
+local function ChangesText(on)
+    local out = {}
+    for _, click in ipairs(PLAIN_CLICKS) do
+        local action = SlotAction(click.key, "ally")
+        if action and action.type ~= click.kind then
+            local other = KeyThatDoes(click.kind)
+            out[#out + 1] = click.name .. " on an ally is now " .. ActionEntry(action).name .. ". "
+                .. (other and (other .. " " .. click.does .. ".") or ("No key of this set " .. click.does .. " any more."))
+        end
+    end
+    local taken = TakenText()
+    if taken ~= "" then
+        out[#out + 1] = "Keys that work anywhere are ClickLegend's all the time. The game had these on them: " .. taken .. "."
+    end
+    if not on and ns.CastBlocked() then out[#out + 1] = ns.CastBlocked() end
+    if on then
+        local provider = ClickLegendAPI and ClickLegendAPI.provider
+        local waiting = provider and provider.Pending and provider.Pending()
+        out[#out + 1] = waiting and "You are in combat: the keys start working when it ends."
+            or "Try it: click your own unit frame."
+    end
+    return table.concat(out, "\n")
+end
+
 local function ShowOptions(f, shown)
     for _, opt in pairs(f.opts) do opt.SetShown(false) end
     if not shown then return end
@@ -856,8 +925,12 @@ local function ShowOptions(f, shown)
     local count, anywhere = KeyboardKeys()
     if count > 0 then
         Set(f.opts.hover, anywhere == count, "Keyboard keys work on any unit under the cursor",
-            "On: your " .. count .. " keyboard key(s) also work on characters in the world and on nameplates, not only on unit frames. "
-            .. "ClickLegend then has those keys all the time, so they stop doing anything else. Mouse buttons and the wheel are not changed.")
+            "On: your " .. count .. " keyboard key(s) also work on characters in the world and on nameplates, and on your target "
+            .. "when nothing is under the cursor. ClickLegend then has those keys all the time: what the game had on them stops.")
+        -- Said here, before it is switched on for good: the keys this takes from the game.
+        local taken = TakenText()
+        f.note:SetText(taken ~= "" and ("The game had these on them: " .. taken .. ".") or "")
+        f.note:SetShown(taken ~= "")
     end
     local specID, specName, own = SpecState()
     if specID then
@@ -888,7 +961,7 @@ Refresh = function()
     ShowSide(f, onSide)
     f.quickStart:SetShown(onStart and value ~= "empty")
     f.quickNote:SetShown(onStart and value ~= "empty")
-    f.enable:SetShown(onEnd)
+    f.enable:SetShown(onEnd); f.state:SetShown(onEnd); f.changes:SetShown(onEnd)
     ShowButtons(f, onButtons)
     ShowKeys(f, onKeys)
     ShowOptions(f, onOptions)
@@ -926,12 +999,16 @@ Refresh = function()
         f.text:SetText((name and (name .. " has " .. #set.bindings .. " keys. ") or "")
             .. "The Bindings tab lists them: click a key there to change it, or to add rules for combat, forms and more. "
             .. "Undo takes back the last change.")
-        f.enable.label:SetText(on and "Click casting is on" or "Turn click casting on")
+        f.enable.label:SetText(on and "Turn click casting off" or "Turn click casting on")
+        f.state:SetText(on and "Click casting is on." or "Click casting is off.")
         if on then
-            f.enable.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
+            f.enable.label:SetTextColor(0.75, 0.75, 0.75)
+            f.state:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
         else
-            f.enable.label:SetTextColor(1, 1, 1)
+            f.enable.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
+            f.state:SetTextColor(0.75, 0.75, 0.75)
         end
+        f.changes:SetText(ChangesText(on))
     end
 end
 

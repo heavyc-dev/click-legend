@@ -181,7 +181,7 @@ local ApplyPreset               -- defined with the share functions
 local PRESETS = {
     default = { name = "Default", set = {
         layout = "horizontal", rows = "both", layers = "held", iconSize = 28, spacing = 2, perLine = 12,
-        scale = 1, labels = true, labelStyle = "text", labelSize = 9, bars = true, background = false } },
+        scale = 1, labels = true, labelStyle = "icon", labelSize = 9, bars = true, background = false } },
     compact = { name = "Compact", set = {
         layout = "horizontal", rows = "both", layers = "held", iconSize = 20, spacing = 1, perLine = 12,
         labels = false, bars = true, background = false } },
@@ -230,7 +230,7 @@ OPTIONS.Bindings = {
     { header = "KEYS" },
     { kind = "button", text = "Open the binding editor", click = function() OpenBindingsTab() end },
 }
-local PANEL_PAGES = { "Display", "Look", "Order", "Bindings", "Share" }
+local PANEL_PAGES = { "Bindings", "Display", "Look", "Order", "Share" }
 
 local function RefreshWindow() ns.RefreshWindow() end     -- Window.lua
 
@@ -521,8 +521,8 @@ local function RegisterSettingsPage()
             {
                 key = MODULE_KEY,
                 title = "ClickLegend",
-                description = "An on-screen legend of your click-cast bindings, read from EllesmereUI HoverCast, "
-                    .. "Clique, VuhDo, HealBot or the game's own Click Casting.",
+                description = "Click casting with rules per key, and an on-screen legend of your bindings: its own, "
+                    .. "or those read from EllesmereUI HoverCast, Clique, VuhDo, HealBot or the game's own Click Casting.",
                 pages = PANEL_PAGES,
                 buildPage = BuildSettingsPage,
                 onReset = function() if db then ResetSettings() end end,

@@ -45,6 +45,7 @@ local SpellTexture, TYPE_ICON, TYPE_NAME, ValidIcon =
     ns.SpellTexture, ns.TYPE_ICON, ns.TYPE_NAME, ns.ValidIcon
 local CollectBlizzardLayers, Report, Safe =
     ns.CollectBlizzardLayers, ns.Report, ns.Safe
+local OtherSources, SortedMods = ns.OtherSources, ns.SortedMods
 
 local SET_VERSION = 1
 local MACRO_LIMIT = 255             -- the longest macro text the game runs
@@ -89,15 +90,26 @@ local function Flag(v)
     return nil
 end
 
+-- A spell or item name is written into a /cast line as it is. One with a
+-- line break, ";" or a bracket in it would end that line and start something
+-- else, so such a name (only ever seen in a set shared as text) is refused.
+local function CastName(v)
+    v = Text(v)
+    if v and v:find("[%c;%[%]]") then return nil end
+    return v
+end
+
 local function CleanAction(a)
     if type(a) ~= "table" or not ACTION_TYPES[a.type] then return nil end
     local t = a.type
     if t == "spell" then
-        local name, id = Text(a.name), WholeNumber(a.spellID, 1, 2 ^ 31)
+        local name, id = CastName(a.name), WholeNumber(a.spellID, 1, 2 ^ 31)
+        if Text(a.name) and not name then return nil end
         if not (name or id) then return nil end
         return { type = t, name = name, spellID = id, pinned = (id and a.pinned == true) or nil }
     elseif t == "item" then
-        local name, id = Text(a.name), WholeNumber(a.itemID, 1, 2 ^ 31)
+        local name, id = CastName(a.name), WholeNumber(a.itemID, 1, 2 ^ 31)
+        if Text(a.name) and not name then return nil end
         if not (name or id) then return nil end
         return { type = t, name = name, itemID = id }
     elseif t == "macro" then
@@ -153,8 +165,9 @@ local function CleanBinding(b)
             if b.pre[what] == true then pre = pre or {}; pre[what] = true end
         end
     end
-    return { key = mods .. key, rules = rules, pre = pre,
-             hover = (b.hover == true and HoverAllowed(mods .. key)) or nil }
+    local hover = (b.hover == true and HoverAllowed(mods .. key)) or nil
+    return { key = mods .. key, rules = rules, pre = pre, hover = hover,
+             orTarget = (hover and b.orTarget == true) or nil }
 end
 
 local function CleanSet(set)
@@ -172,6 +185,19 @@ local function CleanSet(set)
 end
 
 local sets, cast                -- ClickLegendCastDB.sets, ClickLegendCharDB.cast
+
+-- Clique writes its bindings to the same unit frames and keeps the frames
+-- other addons register. With both on, some frames follow one and some the
+-- other, so ClickLegend's click casting stays off while Clique is loaded.
+-- Returns why it cannot be on, or nil.
+local function Blocked()
+    if type(Clique) == "table" then
+        return "Clique is loaded and binds the same unit frames, so ClickLegend's click casting stays off. "
+            .. "To use ClickLegend's, switch Clique off in the game's AddOns list and reload; "
+            .. "New... can copy your Clique bindings into a set first."
+    end
+    return nil
+end
 
 local function SanitizeCast()
     for name, set in pairs(sets) do
@@ -202,6 +228,7 @@ local function InitCast()
     if type(ClickLegendCharDB.cast) ~= "table" then ClickLegendCharDB.cast = {} end
     sets, cast = ClickLegendCastDB.sets, ClickLegendCharDB.cast
     SanitizeCast()
+    if cast.enabled and Blocked() then cast.enabled, cast.heldBack = false, true end   -- said at login
     -- The extra mouse buttons this player has (4 and up), shown to the guided
     -- setup by clicking them. Shared by every character: it is one mouse.
     local buttons, seen = {}, {}
@@ -395,8 +422,8 @@ end
 
 -------------------------------------------------------------------------------
 --  A set as text, to share:  CLB1;name;key|rule|rule;key|rule...
---  A key may be followed by "+" and letters: h works anywhere, s stop the
---  current cast first, 1 and 2 use that trinket first.
+--  A key may be followed by "+" and letters: h works anywhere, t else on the
+--  target, s stop the current cast first, 1 and 2 use that trinket first.
 --  rule = conditions~action, conditions = words joined by ",", action =
 --  kind:name:id:p (p: that exact rank). Names are written with anything but
 --  letters, digits, "_", "-" and "." as %XX, so they cannot break the format.
@@ -428,7 +455,7 @@ local function ExportSet(name)
     local parts = { SHARE_TAG, Escape(name) }
     for _, binding in ipairs(set.bindings) do
         local pre = binding.pre or {}
-        local marks = (binding.hover and "h" or "") .. (pre.stop and "s" or "")
+        local marks = (binding.hover and "h" or "") .. (binding.orTarget and "t" or "") .. (pre.stop and "s" or "")
             .. (pre.trinket1 and "1" or "") .. (pre.trinket2 and "2" or "")
         local fields = { Escape(binding.key) .. (marks ~= "" and ("+" .. marks) or "") }
         for _, rule in ipairs(binding.rules) do
@@ -481,6 +508,7 @@ local function ImportSet(text)
             local keyText, marks = fields[1]:match("^([^+]*)%+?(.*)$")
             bindings[#bindings + 1] = {
                 key = Unescape(keyText), rules = rules, hover = marks:find("h", 1, true) ~= nil,
+                orTarget = marks:find("t", 1, true) ~= nil,
                 pre = { stop = marks:find("s", 1, true) ~= nil, trinket1 = marks:find("1", 1, true) ~= nil,
                         trinket2 = marks:find("2", 1, true) ~= nil },
             }
@@ -501,9 +529,14 @@ end
 -- "[@mouseover,help,dead]": the unit under the cursor, and the rule's
 -- conditions in a fixed order. "exists" is only spelled out when nothing else
 -- already implies it; macro text is short of room.
-local function Clause(when)
-    local parts = { "@mouseover" }
-    if not when.reaction and when.dead == nil then parts[#parts + 1] = "exists" end
+-- With `onTarget` the clause is for the player's target instead (no unit
+-- named, which is what a macro takes as the target): "[help,nodead]", "[]".
+local function Clause(when, onTarget)
+    local parts = {}
+    if not onTarget then
+        parts[1] = "@mouseover"
+        if not when.reaction and when.dead == nil then parts[#parts + 1] = "exists" end
+    end
     if when.reaction then parts[#parts + 1] = when.reaction end
     if when.dead ~= nil then parts[#parts + 1] = when.dead and "dead" or "nodead" end
     if when.combat ~= nil then parts[#parts + 1] = when.combat and "combat" or "nocombat" end
@@ -623,6 +656,7 @@ local function CastToken(action)
 end
 
 local COMMAND = { target = "/target", focus = "/focus", assist = "/assist" }
+local ActionEntry                  -- defined with the legend's reader, below
 
 -- Turns a binding into what has to be put on a frame.
 --   kind = "none"       nothing can fire (every rule skipped)
@@ -631,6 +665,7 @@ local COMMAND = { target = "/target", focus = "/focus", assist = "/assist" }
 --                       helper and "{rank:ID}" for the helper that casts that
 --                       exact spell rank; Provider.lua fills them in.
 --   length, tooLong     size of the text once the helpers are named
+--   onTarget            the key also casts on the target (see binding.orTarget)
 --   skipped             rules left out because the spell is not known
 --   problems            what the editor should tell the player
 local function CompileBinding(binding)
@@ -663,15 +698,39 @@ local function CompileBinding(binding)
     local function CloseCast()
         if castParts then lines[#lines + 1] = castVerb .. " " .. tconcat(castParts, "; "); castParts = nil end
     end
+    local ownLines = false
     local function OwnLine(text)
+        ownLines = true
         CloseCast()
         if #earlier > 0 then lines[#lines + 1] = "/stopmacro " .. tconcat(earlier) end
         lines[#lines + 1] = text
     end
+    -- A rule whose conditions include every condition of an earlier rule can
+    -- never fire: whenever it fits, the earlier one fits too and wins. (The
+    -- very same conditions are the usual shape of "this spell, or else that
+    -- one" and are left out quietly, below.)
+    local function Covers(earlierWhen, when)
+        local same = true
+        for field, value in pairs(earlierWhen) do
+            if when[field] ~= value then return false end
+        end
+        for field in pairs(when) do
+            if earlierWhen[field] == nil then same = false end
+        end
+        return not same
+    end
     local seen, castClauses = {}, {}          -- castClauses: when a spell of this key is cast
+    local elseParts, elseClauses = {}, {}     -- the same again for the player's target
     for i, rule in ipairs(live) do
         local action, clause = rule.action, Clause(rule.when)
         local token = CastToken(action)
+        for j = 1, i - 1 do
+            if Covers(live[j].when, rule.when) then
+                out.problems[#out.problems + 1] = ActionEntry(action).name .. " can never fire here: "
+                    .. ActionEntry(live[j].action).name .. " above it fits every time it would. Move it up, or give the one above another condition."
+                break
+            end
+        end
         if seen[clause] then
             -- The same conditions as an earlier rule: that one always wins. This is
             -- the usual shape of a fallback whose first choice is known, so it is
@@ -682,8 +741,15 @@ local function CompileBinding(binding)
                 if #earlier > 0 and #lines > 0 then lines[#lines + 1] = "/stopmacro " .. tconcat(earlier) end
                 castParts, castVerb = {}, "/cast"
             end
-            if action.type ~= "spell" then castVerb = "/use" else castClauses[#castClauses + 1] = clause end
+            local onTarget = Clause(rule.when, true)
+            if action.type ~= "spell" then
+                castVerb = "/use"
+            else
+                castClauses[#castClauses + 1] = clause
+                elseClauses[#elseClauses + 1] = onTarget
+            end
             castParts[#castParts + 1] = clause .. " " .. token
+            elseParts[#elseParts + 1] = onTarget .. " " .. token
         elseif action.type == "spell" then
             OwnLine("/click " .. clause .. " {rank:" .. action.spellID .. "}")
             castClauses[#castClauses + 1] = clause
@@ -715,19 +781,48 @@ local function CompileBinding(binding)
     -- Before a spell is cast: stop the cast in progress, use a trinket. Only
     -- under the conditions of the key's spell rules, so that a click that
     -- targets or opens the menu does neither.
-    if binding.pre and #castClauses > 0 then
-        local when, at = tconcat(castClauses), 1
-        for _, what in ipairs(PRE_ORDER) do
-            if binding.pre[what] then
-                table.insert(lines, at, what == "stop" and ("/stopcasting " .. when)
-                    or ("/use " .. when .. " " .. (what == "trinket1" and "13" or "14")))
-                at = at + 1
+    -- With `onTarget` the key's one /cast line goes on to the player's
+    -- target: the same spells under the same conditions, tried when none of
+    -- them fits the unit under the cursor or nothing is there. That is what
+    -- keeps a key that works anywhere from being dead away from a unit.
+    local function Build(onTarget)
+        local all = {}
+        for i, line in ipairs(lines) do all[i] = line end
+        local when = tconcat(castClauses)
+        if onTarget then
+            all[1] = all[1] .. "; " .. tconcat(elseParts, "; ")
+            when = when .. tconcat(elseClauses)
+        end
+        if binding.pre and #castClauses > 0 then
+            local at = 1
+            for _, what in ipairs(PRE_ORDER) do
+                if binding.pre[what] then
+                    table.insert(all, at, what == "stop" and ("/stopcasting " .. when)
+                        or ("/use " .. when .. " " .. (what == "trinket1" and "13" or "14")))
+                    at = at + 1
+                end
+            end
+        end
+        local text = tconcat(all, "\n")
+        return text, #(text:gsub("{[^}]*}", ("x"):rep(PROXY_LENGTH)))
+    end
+
+    out.kind = "macrotext"
+    if binding.hover and binding.orTarget then
+        if ownLines or #lines ~= 1 then
+            out.problems[#out.problems + 1] = "\"Else my target\" needs a key whose rules are all spells or items; "
+                .. "this key works on the unit under the cursor only."
+        else
+            local text, length = Build(true)
+            if length > MACRO_LIMIT then
+                out.problems[#out.problems + 1] = "No room left for \"else my target\" on this key; "
+                    .. "it works on the unit under the cursor only."
+            else
+                out.text, out.length, out.onTarget = text, length, true
             end
         end
     end
-
-    out.kind, out.text = "macrotext", tconcat(lines, "\n")
-    out.length = #(out.text:gsub("{[^}]*}", ("x"):rep(PROXY_LENGTH)))
+    if not out.text then out.text, out.length = Build(false) end
     out.tooLong = out.length > MACRO_LIMIT
     if out.tooLong then
         out.problems[#out.problems + 1] = "Too many rules for one key: " .. out.length
@@ -748,7 +843,7 @@ local function ItemIcon(action)
     return nil
 end
 
-local function ActionEntry(action)
+function ActionEntry(action)
     local t = action.type
     if t == "spell" then
         local id = ActionSpellID(action)
@@ -878,16 +973,31 @@ local function KeyName(keyStr)
     return (mods ~= "" and (ModsLong(mods) .. "+") or "") .. LongKey(key)
 end
 
+-- The keys of the set in use that work anywhere and are also one of the
+-- game's key bindings, which then never fires: { key = name, action = what
+-- the game had on it }.
+local function Shadowed()
+    local out = {}
+    local set = ActiveSet()
+    if not (set and GetBindingAction) then return out end
+    for _, binding in ipairs(set.bindings) do
+        if binding.hover then
+            local ok, action = pcall(GetBindingAction, binding.key)
+            if ok and type(action) == "string" and action ~= "" and not action:find("ClickLegend", 1, true) then
+                local named = _G["BINDING_NAME_" .. action]
+                out[#out + 1] = { key = KeyName(binding.key), action = type(named) == "string" and named or action }
+            end
+        end
+    end
+    return out
+end
+
 local function Conflicts()
     local found = {}
     local eui = type(EllesmereUIDB) == "table" and EllesmereUIDB.clickCast
     if type(eui) == "table" and eui.enabled then
         found[#found + 1] = "EllesmereUI HoverCast is on and binds the same frames. Use one or the other: "
             .. "to keep ClickLegend, switch off Enable Click Casting on EllesmereUI's HoverCast page."
-    end
-    if type(Clique) == "table" then
-        found[#found + 1] = "Clique is loaded and binds the same frames. Use one or the other: "
-            .. "to keep ClickLegend, switch Clique off in the game's AddOns list and reload."
     end
     -- VuhDo hands its frames to a click-cast addon when its "Clique Support"
     -- option is ticked, and binds them itself otherwise.
@@ -918,15 +1028,9 @@ local function Conflicts()
             .. "work on the game's frames and other unit frames, not on HealBot's."
     end
     local set = ActiveSet()
-    if set and GetBindingAction then
-        for _, binding in ipairs(set.bindings) do
-            local okKey, action = pcall(GetBindingAction, binding.key)
-            if binding.hover and okKey and type(action) == "string" and action ~= ""
-                and not action:find("ClickLegend", 1, true) then
-                found[#found + 1] = KeyName(binding.key) .. " works anywhere, so ClickLegend has that key all the time. "
-                    .. "It is also one of the game's key bindings (" .. action .. "), which will not fire while click casting is on."
-            end
-        end
+    for _, taken in ipairs(Shadowed()) do
+        found[#found + 1] = taken.key .. " works anywhere, so ClickLegend has that key all the time. "
+            .. "It is also one of the game's key bindings (" .. taken.action .. "), which will not fire while click casting is on."
     end
     local ok, game = pcall(CollectBlizzardLayers)
     if set and ok and type(game) == "table" then
@@ -958,6 +1062,14 @@ ClickLegendAPI = {
 -- Tells the provider to bring the frames in line with the settings. The
 -- provider ignores this until a character has had its bindings on.
 local function UpdateProvider()
+    if cast and (cast.enabled or cast.heldBack) then
+        local why = Blocked()
+        if why then
+            cast.enabled = false
+            Print(why)
+        end
+        cast.heldBack = nil
+    end
     local provider = ClickLegendAPI.provider
     if cast and provider then Safe(provider.Apply) end
 end
@@ -1085,19 +1197,22 @@ function Edit.SetKey(bindingIndex, keyStr)
     local taken = FindBinding(set, key)
     if taken and taken ~= bindingIndex then return false, KeyName(key) .. " is already in this set." end
     binding.key = key
-    if not HoverAllowed(key) then binding.hover = nil end
+    if not HoverAllowed(key) then binding.hover, binding.orTarget = nil, nil end
     CastChanged()
     return true
 end
 
 -- Whether the key works on any unit under the cursor, or on unit frames only.
-function Edit.SetHover(bindingIndex, on)
+-- With `orTarget` it goes on to the player's target when the unit under the
+-- cursor does not fit or nothing is there.
+function Edit.SetHover(bindingIndex, on, orTarget)
     local _, binding = Target(bindingIndex)
     if not binding then return false, "No such key." end
     if on and not HoverAllowed(binding.key) then
         return false, "Plain left and right click stay on unit frames: the game needs them everywhere else."
     end
     binding.hover = on and true or nil
+    binding.orTarget = (on and orTarget) and true or nil
     CastChanged()
     return true
 end
@@ -1434,7 +1549,8 @@ local function KeyboardKeys()
     return count, anywhere
 end
 
--- Every keyboard key of the set in use: anywhere, or on unit frames only.
+-- Every keyboard key of the set in use: anywhere (and else on the target, so
+-- that the key is not dead away from a unit), or on unit frames only.
 function Edit.SetHoverKeys(on)
     local set = ActiveSet()
     if not set then return false end
@@ -1442,10 +1558,70 @@ function Edit.SetHoverKeys(on)
         local _, key = ParseKey(binding.key)
         if not key:match("^BUTTON%d+$") and not key:match("^MOUSEWHEEL") then
             binding.hover = on and true or nil
+            binding.orTarget = on and true or nil
         end
     end
     CastChanged()
     return true
+end
+
+-------------------------------------------------------------------------------
+--  A set copied from another click-cast addon, or from the game's own Click
+--  Casting: what the legend reads from them (Sources.lua), turned into rules.
+--  One spell for allies and another for enemies become two rules; the same
+--  on both becomes one rule for anyone. What cannot be carried over (an
+--  addon's own actions, an item known by name only) is left out and counted.
+-------------------------------------------------------------------------------
+local SOURCE_ACTION = {
+    [TYPE_NAME.target] = "target", [TYPE_NAME.menu] = "menu", ["Set Focus"] = "focus", ["Assist"] = "assist",
+}
+
+local function SourceAction(entry)
+    if type(entry) ~= "table" then return nil end
+    if SOURCE_ACTION[entry.name] then return { type = SOURCE_ACTION[entry.name] } end
+    -- A spell goes by its own name: some sources show a label of their own.
+    local id = entry.spellID or SpellIDFor(entry.name)
+    if id then return CleanAction({ type = "spell", name = SpellName(id) or entry.name }) end
+    if MacroInfo(entry.name) then return { type = "macro", name = entry.name } end
+    return nil
+end
+
+-- The sources a set can be copied from right now: { id, name }.
+local function CopySources()
+    local out = {}
+    for _, source in ipairs(OtherSources()) do out[#out + 1] = { id = source.id, name = source.name } end
+    return out
+end
+
+-- Returns the new set's name, how many keys it has and how many bindings
+-- were left out; or false and why not.
+local function CopyFromSource(id)
+    for _, source in ipairs(OtherSources()) do
+        if source.id == id then
+            local bindings, left = {}, 0
+            for _, mods in ipairs(SortedMods(source.layers)) do
+                local layer = source.layers[mods]
+                for _, key in ipairs(layer.keys) do
+                    local slot = layer.byKey[key]
+                    local ally, enemy = SourceAction(slot.ally), SourceAction(slot.enemy)
+                    if slot.ally and not ally then left = left + 1 end
+                    if slot.enemy and not enemy and slot.enemy ~= slot.ally then left = left + 1 end
+                    local rules = {}
+                    if ally and enemy and ally.type == enemy.type and ally.name == enemy.name then
+                        rules[1] = { when = {}, action = ally }
+                    else
+                        if ally then rules[#rules + 1] = { when = { reaction = "help" }, action = ally } end
+                        if enemy then rules[#rules + 1] = { when = { reaction = "harm" }, action = enemy } end
+                    end
+                    if #rules > 0 then bindings[#bindings + 1] = { key = mods .. key, rules = rules } end
+                end
+            end
+            local name = AddSet("From " .. source.name, { bindings = bindings })
+            if not name then return false, "Nothing in " .. source.name .. " could be copied." end
+            return name, #sets[name].bindings, left
+        end
+    end
+    return false, "Nothing to copy from."
 end
 
 -------------------------------------------------------------------------------
@@ -1491,7 +1667,7 @@ local function Status()
         local what = compiled.kind == "macro" and ("macro " .. compiled.macro)
             or compiled.kind == "macrotext" and compiled.text:gsub("\n", " | ")
             or "nothing (no rule can fire)"
-        print("  " .. KeyName(binding.key) .. (binding.hover and " (anywhere)" or "") .. ": " .. what)
+        print("  " .. KeyName(binding.key) .. (binding.hover and (compiled.onTarget and " (anywhere, else target)" or " (anywhere)") or "") .. ": " .. what)
         for _, problem in ipairs(compiled.problems) do print("    ! " .. problem) end
     end
     if cast.enabled then
@@ -1510,7 +1686,9 @@ local function CastCommand(arg, rawArg)
     if not cast then return false end
     local sub = arg:match("^(%S*)")
     local rest = Text((rawArg or ""):match("^%s*%S+%s+(.*)$"))
-    if sub == "on" or sub == "off" then
+    if sub == "on" and Blocked() then
+        Print(Blocked())
+    elseif sub == "on" or sub == "off" then
         cast.enabled = sub == "on"
         Print("own bindings " .. sub .. ".")
         if cast.enabled then
@@ -1559,7 +1737,11 @@ ns.CastKeyName      = KeyName
 ns.CastSettings     = CastSettings
 ns.ConditionValue   = ConditionValue
 ns.CompileBinding   = CompileBinding
+ns.CastBlocked      = Blocked
+ns.CastShadowed     = Shadowed
+ns.CopyFromSource   = CopyFromSource
 ns.CopySet          = CopySet
+ns.CopySources      = CopySources
 ns.DeleteSet        = DeleteSet
 ns.ExportSet        = ExportSet
 ns.ImportSet        = ImportSet

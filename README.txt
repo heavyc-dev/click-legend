@@ -57,6 +57,9 @@ Click casting of its own (optional, off until you switch it on)
   - Quickbind: lists your spells. Point at one and press a key or a mouse
     button, with Shift, Ctrl or Alt if you like, and the spell is on that
     key: on allies, on enemies or on dead allies, whichever the spell is for.
+  - A key that works anywhere can go on to your target ("Under the cursor,
+    else my target"): with nothing fitting under the cursor the same spells
+    are cast on your target, so the key is never dead.
   - A key can work on any unit under the cursor, not only on unit frames:
     characters in the world and nameplates too. Edit the key and pick
     "Any unit under the cursor". ClickLegend then has that key all the
@@ -87,6 +90,11 @@ Click casting of its own (optional, off until you switch it on)
     each plain or with Shift, Ctrl or Alt. One page then lists those keys
     with what each does on an ally, a dead ally and an enemy; click a box
     to pick. A last page has the usual options.
+  - New... also offers "Copy from" for each click-cast addon ClickLegend
+    can read right now (Clique, VuhDo, HealBot, EllesmereUI HoverCast, the
+    game's own Click Casting): its bindings become a set of your own. An
+    addon's own actions are left out. Switch the other click casting off
+    before you turn ClickLegend's on.
   - New... offers a starter set for each class to begin from. The most used
     spells are on the plain clicks, then Shift, Ctrl and Alt. Where a plain
     click has an ally spell, it still targets or opens the menu on everyone
@@ -103,9 +111,10 @@ Click casting of its own (optional, off until you switch it on)
     standard way: EllesmereUI, ElvUI and Grid2 among them. VuhDo does once
     you tick "Clique Support" in VuhDo's options (General, Misc) and
     reload. HealBot always does its own click casting on its own frames.
-    Run only one click-cast addon on the same frames:
-    ClickLegend warns when EllesmereUI HoverCast, Clique or the game's own
-    Click Casting is binding them too, and never changes theirs.
+    Run only one click-cast addon on the same frames. With Clique loaded,
+    ClickLegend's click casting stays off (switch Clique off in the AddOns
+    list and reload). It warns when EllesmereUI HoverCast or the game's own
+    Click Casting is binding the same frames, and never changes theirs.
   - The starter sets use English spell names. On another language client
     use the guided setup or the editor, which list your own spells.
   - Conditions it cannot offer, because the game hides them from addons in

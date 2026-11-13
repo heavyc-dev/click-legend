@@ -17,7 +17,10 @@
 --    * A key does one job on an ally and a related one on an enemy (heal /
 --      damage, dispel / purge), so it is never dead on either kind of frame.
 --    * The resurrection is the "dead ally" rule of the main heal key: click
---      the dead player with the key you were healing them with.
+--      the dead player with the key you were healing them with. A combat
+--      resurrection is not put there: it has a long cooldown, and a healer
+--      clicking on through a death would spend it on whoever died under the
+--      cursor. It gets a key that takes a modifier to press.
 --    * Where a spell arrives late or comes from a talent, the better spell is
 --      listed first and the one it replaces after it. A rule whose spell the
 --      character does not know is skipped, so one template serves every level
@@ -84,23 +87,23 @@ local TEMPLATES = {
         TARGET_KEY, MENU_KEY,
     } },
     { class = "DRUID", name = "Druid: healer", keys = {
-        { "BUTTON1", "help dead combat=Rebirth", "help dead=Revive", "help dead=Rebirth", "help=Healing Touch", "=@target" },
+        { "BUTTON1", "help dead nocombat=Revive", "help dead nocombat=Rebirth", "help=Healing Touch", "=@target" },
         { "BUTTON2", "help=Regrowth", "help=Healing Touch", "=@menu" },
         { "BUTTON3", "help=Rejuvenation", "harm=Moonfire" },
         { "SHIFT-BUTTON1", "help=Swiftmend", "harm=Wrath" },
         { "SHIFT-BUTTON2", "help=Remove Curse", "harm=Entangling Roots" },
         { "CTRL-BUTTON1", "help=Abolish Poison", "help=Cure Poison", "harm=Faerie Fire" },
-        { "CTRL-BUTTON2", "help=Innervate", "harm=Hibernate" },
+        { "CTRL-BUTTON2", "help dead=Rebirth", "help=Innervate", "harm=Hibernate" },
         TARGET_KEY, MENU_KEY,
     } },
     { class = "DRUID", name = "Druid: feral or balance", keys = {
-        { "BUTTON1", "help dead combat=Rebirth", "help dead=Revive", "help dead=Rebirth", "help=Rejuvenation", "=@target" },
+        { "BUTTON1", "help dead nocombat=Revive", "help dead nocombat=Rebirth", "help=Rejuvenation", "=@target" },
         { "BUTTON2", "help=Regrowth", "help=Healing Touch", "=@menu" },
         { "BUTTON3", "harm=Moonfire", "help=Remove Curse" },
         { "SHIFT-BUTTON1", "harm=Wrath", "help=Abolish Poison", "help=Cure Poison" },
         { "SHIFT-BUTTON2", "harm=Entangling Roots", "help=Innervate" },
         { "CTRL-BUTTON1", "harm=Faerie Fire", "help=Mark of the Wild" },
-        { "CTRL-BUTTON2", "harm=Hibernate" },
+        { "CTRL-BUTTON2", "help dead=Rebirth", "harm=Hibernate" },
         TARGET_KEY, MENU_KEY,
     } },
     { class = "SHAMAN", name = "Shaman: healer", keys = {
@@ -123,16 +126,14 @@ local TEMPLATES = {
         { "CTRL-BUTTON2", "harm=Frost Shock" },
         TARGET_KEY, MENU_KEY,
     } },
+    -- Little or nothing to cast on allies: plain left and right click stay as
+    -- they are, so a click on a party member still targets them.
     { class = "MAGE", name = "Mage", keys = {
-        { "BUTTON1", "help=Remove Lesser Curse", "=@target" },
-        { "BUTTON2", "help=Arcane Intellect", "=@menu" },
-        { "BUTTON3", "harm=Polymorph" },
-        { "SHIFT-BUTTON1", "harm=Counterspell" },
+        { "BUTTON3", "harm=Polymorph", "help=Remove Lesser Curse" },
+        { "SHIFT-BUTTON1", "harm=Counterspell", "help=Arcane Intellect" },
         { "SHIFT-BUTTON2", "harm=Frostbolt", "harm=Fireball" },
         { "CTRL-BUTTON1", "harm=Fire Blast" },
-        TARGET_KEY, MENU_KEY,
     } },
-    -- Nothing to cast on allies: plain left and right click stay as they are.
     { class = "WARLOCK", name = "Warlock", keys = {
         { "BUTTON3", "harm=Corruption", "help=Unending Breath" },
         { "SHIFT-BUTTON1", "harm=Curse of Agony" },

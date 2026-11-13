@@ -58,13 +58,25 @@ end
 local function MenuProxyName(frame)
     local b = menuProxy[frame]
     if not b then
-        -- Named after its frame when the frame has a name, so /fstack reads well.
+        -- A short name: it is written into the key's macro text, which has
+        -- 255 characters in all, and Cast.lua counts 24 for it.
+        -- Named after its frame where that fits, so /fstack reads well; a
+        -- longer frame name becomes a number worked out from it.
+        local name
         local ok, frameName = pcall(frame.GetName, frame)
-        if not ok or type(frameName) ~= "string" or frameName == "" or _G["ClickLegendCastMenu_" .. frameName] then
-            proxyCount = proxyCount + 1
-            frameName = tostring(proxyCount)
+        if ok and type(frameName) == "string" and frameName ~= "" then
+            name = "ClgMenu_" .. frameName
+            if #name > 24 then
+                local sum = 0
+                for i = 1, #frameName do sum = (sum * 31 + frameName:byte(i)) % 1000000 end
+                name = "ClgMenu" .. sum
+            end
         end
-        b = HelperButton("ClickLegendCastMenu_" .. frameName, frame)
+        while not name or _G[name] do
+            proxyCount = proxyCount + 1
+            name = "ClgMenu_" .. proxyCount
+        end
+        b = HelperButton(name, frame)
         b:SetAllPoints(frame)
         b:SetAttribute("type", "togglemenu")
         for i = 1, 5 do b:SetAttribute("type" .. i, "togglemenu") end
@@ -77,7 +89,7 @@ end
 local function RankProxyName(id)
     local name = rankProxy[id]
     if not name then
-        name = "ClickLegendCastRank" .. id
+        name = "ClgRank" .. id                  -- short, as for the menu helper
         local b = HelperButton(name, UIParent)
         b:SetSize(1, 1)
         b:SetAttribute("type", "spell")
@@ -129,6 +141,9 @@ local function BuildPlan()
     for _, binding in ipairs(set.bindings) do
         local mods, key = ParseKey(binding.key)
         local button = tonumber(key:match("^BUTTON(%d+)$"))
+        -- A unit frame is only ever clicked with mouse buttons 1 to 5. A button
+        -- past those reaches the game as a key, so it is bound like one.
+        if button and button > 5 then button = nil end
         local prefix = AttributePrefix(mods)
         if prefix then
             local compiled = API.CompileBinding(binding)
@@ -262,8 +277,13 @@ local header, keyButton, keyMenu, hoverMenu
 local wrapped = setmetatable({}, weak)      -- frames that carry the wraps
 local snippetEnter, snippetLeave = "", ""
 
-local RUN_ENTER = [[ if self:GetAttribute("clg-keys") then control:RunFor(self, control:GetAttribute("clg_enter")) end ]]
-local RUN_LEAVE = [[ control:RunFor(self, control:GetAttribute("clg_leave")) ]]
+-- "clg-in" marks the frame the cursor is on. A frame that hides lets the
+-- keys go only when it is that frame: frames hide all the time (a target's
+-- target, a pet, a raid member), and one hiding elsewhere must not take the
+-- keys from the frame under the cursor.
+local RUN_ENTER = [[ if self:GetAttribute("clg-keys") then self:SetAttribute("clg-in", true) control:RunFor(self, control:GetAttribute("clg_enter")) end ]]
+local RUN_LEAVE = [[ self:SetAttribute("clg-in", nil) control:RunFor(self, control:GetAttribute("clg_leave")) ]]
+local RUN_HIDE = [[ if self:GetAttribute("clg-in") then self:SetAttribute("clg-in", nil) control:RunFor(self, control:GetAttribute("clg_leave")) end ]]
 
 local function EnsureKeyFrames()
     if header then return end
@@ -296,7 +316,7 @@ local function WrapFrame(frame)
     wrapped[frame] = true
     -- One at a time: a frame that refuses one wrap still gets the others.
     for _, wrap in ipairs({ { "OnEnter", RUN_ENTER }, { "OnLeave", RUN_LEAVE },
-                            { "OnHide", RUN_LEAVE } }) do      -- OnHide: a frame that vanishes under the cursor
+                            { "OnHide", RUN_HIDE } }) do       -- OnHide: a frame that vanishes under the cursor
         local ok, err = pcall(header.WrapScript, header, frame, wrap[1], wrap[2])
         if not ok then API.Report(err) end
     end
@@ -376,8 +396,11 @@ local plan, keyPlan, hoverPlan = {}, {}, {} -- as of the last Apply
 --  with the new frame in "clickcast_button". Our header answers to that, with
 --  a snippet that writes the mouse-button bindings. Keyboard keys and the
 --  unit menu on such a frame start when combat ends: both need a helper that
---  cannot be made in combat. The game's own raid frames have no such hook and
---  are still bound when combat ends.
+--  cannot be made in combat. A key that casts and also opens the menu is
+--  written without its menu line until then, so that its spells work at once
+--  (the starter sets heal on right click and keep the menu for everyone else).
+--  The game's own raid frames have no such hook and are still bound when
+--  combat ends.
 -------------------------------------------------------------------------------
 local Track                                 -- defined below
 local offered = setmetatable({}, weak)      -- group headers looked at
@@ -410,8 +433,18 @@ local function SyncRegisterSnippet()
     local set, clear = { head }, { head }
     if on then
         for _, p in ipairs(plan) do
-            if not p.text:find("{menu}", 1, true) then
-                local text = p.text:gsub("{rank:(%d+)}", function(id) return RankProxyName(tonumber(id)) end)
+            local text = p.text
+            if text:find("{menu}", 1, true) then
+                local kept = {}
+                for line in text:gmatch("[^\n]+") do
+                    if not line:find("{menu}", 1, true) then kept[#kept + 1] = line end
+                end
+                -- What is left ends in the /stopmacro that led to the menu line.
+                if kept[#kept] and kept[#kept]:find("^/stopmacro") then kept[#kept] = nil end
+                text = table.concat(kept, "\n")
+            end
+            if text ~= "" then
+                text = text:gsub("{rank:(%d+)}", function(id) return RankProxyName(tonumber(id)) end)
                 local kind, body = p.prefix .. "type" .. p.button, p.prefix .. "macrotext" .. p.button
                 set[#set + 1] = ("button:SetAttribute(%q, %q)"):format(kind, "macro")
                 set[#set + 1] = ("button:SetAttribute(%q, %q)"):format(body, text)

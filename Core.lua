@@ -136,9 +136,25 @@ local function DefaultFor(key)
     return v
 end
 
+-- Which look the saved settings were last brought up to (`db.look`; not a
+-- setting, so it is not in DEFAULTS and not in the settings text).
+--   2  (2.1.3) the small mouse above each spell is the default. Settings
+--      saved before it had text labels as their default, and a new install
+--      of 2.1.1 started as the large mouse picture by mistake: both are moved
+--      to the new default once. Either can be picked again afterwards.
+local LOOK = 2
+
+local function BringUpToDate()
+    if next(db) ~= nil and (tonumber(db.look) or 1) < 2 then
+        if db.labelStyle == "text" then db.labelStyle = "icon" end
+        if db.layout == "mouse" then db.layout = "horizontal" end
+    end
+end
+
 -- Saved settings can be anything (hand edits, an older version, a crash mid
 -- write): every value is brought back to its type, range and choice list.
 local function SanitizeDB()
+    db.look = LOOK
     for k, v in pairs(DEFAULTS) do
         if type(db[k]) ~= type(v) then db[k] = DefaultFor(k) end
     end
@@ -178,6 +194,7 @@ local function InitDB()
         db = ClickLegendDB
     end
     ns.Publish("db", db)
+    BringUpToDate()
     SanitizeDB()
 end
 
