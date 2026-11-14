@@ -656,6 +656,11 @@ local function CastToken(action)
 end
 
 local COMMAND = { target = "/target", focus = "/focus", assist = "/assist" }
+-- The wheel zooms the camera in the game. A wheel key that works anywhere is
+-- therefore only held while a unit is under the cursor (Provider.lua), and
+-- the game has the wheel the rest of the time. (Zooming from the key's own
+-- macro text was tried first; the client runs no script from it.)
+local ZOOM = { MOUSEWHEELUP = true, MOUSEWHEELDOWN = true }
 local ActionEntry                  -- defined with the legend's reader, below
 
 -- Turns a binding into what has to be put on a frame.
@@ -666,6 +671,7 @@ local ActionEntry                  -- defined with the legend's reader, below
 --                       exact spell rank; Provider.lua fills them in.
 --   length, tooLong     size of the text once the helpers are named
 --   onTarget            the key also casts on the target (see binding.orTarget)
+--   zoom                a wheel key to be held only while a unit is under the cursor
 --   skipped             rules left out because the spell is not known
 --   problems            what the editor should tell the player
 local function CompileBinding(binding)
@@ -821,6 +827,16 @@ local function CompileBinding(binding)
                 out.text, out.length, out.onTarget = text, length, true
             end
         end
+    end
+    -- A wheel key that works anywhere would take the camera's zoom away for
+    -- good. It is the game's again when nothing is under the cursor. Not
+    -- together with "else my target": there the turn of the wheel is a cast.
+    local _, bare = ParseKey(binding.key)
+    if binding.hover and not binding.orTarget and ZOOM[bare] then
+        out.zoom = true
+    elseif binding.hover and binding.orTarget and ZOOM[bare] then
+        out.problems[#out.problems + 1] = "With \"else my target\" the wheel no longer zooms the camera. "
+            .. "\"Any unit under the cursor\" keeps the zoom when nothing is under the cursor."
     end
     if not out.text then out.text, out.length = Build(false) end
     out.tooLong = out.length > MACRO_LIMIT
@@ -1534,26 +1550,30 @@ function Edit.RemoveAction(action)
     return removed
 end
 
--- True for a key that "hover casting" as a whole is about: a keyboard key or
--- a mouse button past the third. Left, right and middle click and the wheel
--- have a use in the world that a player would miss.
+-- True for a key that "hover casting" as a whole is about: a keyboard key,
+-- the wheel or a mouse button past the third. Left, right and middle click
+-- have a use in the world that a player would miss. Second: it is the wheel,
+-- which never goes on to the target, so that it keeps zooming the camera
+-- when no unit is under the cursor (see ZOOM).
 local function HoverKey(keyStr)
     local _, key = ParseKey(keyStr)
-    if key:match("^MOUSEWHEEL") then return false end
+    if key:match("^MOUSEWHEEL") then return true, true end
     local n = tonumber(key:match("^BUTTON(%d+)$"))
-    return n == nil or n > 3
+    return n == nil or n > 3, false
 end
 
 -- Those keys of the set in use: how many there are, how many of them work
--- anywhere, and how many of those go on to the target.
+-- anywhere, and how many of those go on to the target (or are the wheel,
+-- which goes as far as it ever does).
 local function KeyboardKeys()
     local set = ActiveSet()
     local count, anywhere, onTarget = 0, 0, 0
     for _, binding in ipairs(set and set.bindings or {}) do
-        if HoverKey(binding.key) then
+        local is, wheel = HoverKey(binding.key)
+        if is then
             count = count + 1
             if binding.hover then anywhere = anywhere + 1 end
-            if binding.hover and binding.orTarget then onTarget = onTarget + 1 end
+            if binding.hover and (binding.orTarget or wheel) then onTarget = onTarget + 1 end
         end
     end
     return count, anywhere, onTarget
@@ -1569,8 +1589,10 @@ function Edit.SetHoverKeys(on, orTarget)
     local target = on and orTarget ~= false and true or nil
     local changed = false
     for _, binding in ipairs(set.bindings) do
-        if HoverKey(binding.key) and (binding.hover ~= hover or binding.orTarget ~= target) then
-            binding.hover, binding.orTarget = hover, target
+        local is, wheel = HoverKey(binding.key)
+        local want = not wheel and target or nil
+        if is and (binding.hover ~= hover or binding.orTarget ~= want) then
+            binding.hover, binding.orTarget = hover, want
             changed = true
         end
     end
@@ -1680,7 +1702,7 @@ local function Status()
         local what = compiled.kind == "macro" and ("macro " .. compiled.macro)
             or compiled.kind == "macrotext" and compiled.text:gsub("\n", " | ")
             or "nothing (no rule can fire)"
-        print("  " .. KeyName(binding.key) .. (binding.hover and (compiled.onTarget and " (anywhere, else target)" or " (anywhere)") or "") .. ": " .. what)
+        print("  " .. KeyName(binding.key) .. (binding.hover and (compiled.onTarget and " (anywhere, else target)" or compiled.zoom and " (anywhere, else zoom)" or " (anywhere)") or "") .. ": " .. what)
         for _, problem in ipairs(compiled.problems) do print("    ! " .. problem) end
     end
     if cast.enabled then

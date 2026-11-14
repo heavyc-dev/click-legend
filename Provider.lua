@@ -105,7 +105,8 @@ end
 --  The plan: what the active set asks for, the same on every frame.
 --  plan[i] = { prefix = "shift-", button = 1, text = macro text }     mouse buttons
 --  keys[i] = { key = "SHIFT-F", text = macro text }      keyboard keys and the wheel
---  hover[i] = { key = "SHIFT-F", text = macro text }     keys that work anywhere
+--  hover[i] = { key = "SHIFT-F", text = macro text, zoom = true or nil }
+--                                                        keys that work anywhere
 --  A key set to work anywhere is bound all the time, not only while the
 --  cursor is on a unit frame. A mouse button set so is in `hover` and in
 --  `plan`: a unit frame takes its own clicks before any key binding is asked.
@@ -163,7 +164,7 @@ local function BuildPlan()
                 WarnOnce("this game client cannot bind keys to work anywhere; those keys work on unit frames only.")
                 anywhere = false
             end
-            if anywhere then hover[#hover + 1] = { key = mods .. key, text = text } end
+            if anywhere then hover[#hover + 1] = { key = mods .. key, text = text, zoom = compiled.zoom } end
             if text and button then
                 -- A plain mouse button with a rule that asks for an extra modifier
                 -- must also answer when that modifier is held: "*" is any modifier.
@@ -324,18 +325,44 @@ end
 
 -- Keys that work anywhere are held by the header as override bindings: the
 -- game gives them back to whatever they were when the header lets go.
+-- A wheel key among them (`zoom`) is held only while a unit is under the
+-- cursor, so that the wheel zooms the camera the rest of the time: a state
+-- driver on the header watches for that unit and its snippet takes the key
+-- and lets it go, which it may do in combat too. The driver is asked a few
+-- times a second, so the first turn of the wheel right after the cursor
+-- reaches a unit can still be a zoom.
 local hoverBound = ""
+local MOUSEOVER_STATE = "[@mouseover,exists] 1; 0"
+local driverOn = false
 
 local function SyncHover(hover)
+    local canWatch = RegisterStateDriver ~= nil and header.Execute ~= nil
     local parts = {}
-    for i, k in ipairs(hover) do parts[i] = k.key end
+    for i, k in ipairs(hover) do parts[i] = k.key .. ((k.zoom and canWatch) and "~" or "") end
     local signature = table.concat(parts, " ")
     if signature == hoverBound then return end
     hoverBound = ""
     if not (SetOverrideBindingClick and ClearOverrideBindings) then return end
     ClearOverrideBindings(header)
+    local take, drop = {}, {}
     for i, k in ipairs(hover) do
-        SetOverrideBindingClick(header, true, k.key, "ClickLegendCastKeys", "clgh" .. i)
+        if k.zoom and canWatch then
+            take[#take + 1] = ("self:SetBindingClick(true, %q, %q, %q)"):format(k.key, "ClickLegendCastKeys", "clgh" .. i)
+            drop[#drop + 1] = ("self:ClearBinding(%q)"):format(k.key)
+        else
+            SetOverrideBindingClick(header, true, k.key, "ClickLegendCastKeys", "clgh" .. i)
+        end
+    end
+    if canWatch and (#take > 0 or driverOn) then
+        local takeText, dropText = table.concat(take, "\n"), table.concat(drop, "\n")
+        header:SetAttribute("_onstate-clgmo", ("if newstate == 1 or newstate == \"1\" then\n%s\nelse\n%s\nend"):format(takeText, dropText))
+        if #take > 0 and not driverOn then
+            RegisterStateDriver(header, "clgmo", MOUSEOVER_STATE)
+            driverOn = true
+        end
+        -- As things stand now: the driver only speaks when its answer changes.
+        local over = SecureCmdOptionParse and SecureCmdOptionParse(MOUSEOVER_STATE)
+        if #take > 0 and (over == "1" or over == 1) then header:Execute(takeText) end
     end
     hoverBound = signature
 end

@@ -88,8 +88,11 @@ Click casting of its own (optional, off until you switch it on)
     spec only).
   - Guided setup, hover casting: unit frames only, any unit under the
     cursor, or under the cursor and else your target. It covers keyboard
-    keys and extra mouse buttons (the fourth and up); left, right and
-    middle click and the wheel stay on unit frames.
+    keys, the wheel and extra mouse buttons (the fourth and up); left,
+    right and middle click stay on unit frames.
+  - A wheel key that works on any unit under the cursor is ClickLegend's
+    only while a unit is there. The rest of the time the wheel zooms the
+    camera as usual. Not with "else my target": there it casts.
   - Guided setup, your buttons: switch on the buttons you want to set up
     (left, right, middle, wheel up and down, your extra mouse buttons:
     click them to add them, and keyboard keys: press them to add them),

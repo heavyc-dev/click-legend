@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.6
+Changed:
+- Guided setup, hover casting: the choice now covers the wheel too, since it keeps its zoom. With "Under the cursor, else my target" the wheel is set to work on any unit under the cursor and does not go on to your target.
+- A wheel key set to "Any unit under the cursor" is ClickLegend's only while a unit is under the cursor, in the world or on a unit frame. The rest of the time the wheel is the game's and zooms the camera. It used to do nothing there, so the zoom was gone for as long as click casting was on. The very first turn of the wheel after the cursor reaches a unit can still be a zoom. With "Under the cursor, else my target" the wheel casts on your target instead, and the editor says that the zoom is given up.
+
 ## 2.1.5
 Changed:
 - Guided setup has a step of its own for hover casting, second in line: "Unit frames only", "Any unit under the cursor" or "Under the cursor, else my target", each with what it means and what it takes from the game. It replaces the "Keyboard keys work on any unit under the cursor" switch on the options page. The choice covers keyboard keys and extra mouse buttons (the fourth and up), including ones you add on the later steps. Left, right and middle click and the wheel stay on unit frames.

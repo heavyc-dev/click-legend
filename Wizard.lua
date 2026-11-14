@@ -10,8 +10,8 @@
 --       one, so that the legend knows which key it sends.
 --    2. Hover casting: unit frames only, any unit under the cursor, or that
 --       and else the target. One of three, each with what it means. It is
---       about keyboard keys and mouse buttons past the third, and is kept
---       for keys added on the later pages (`hoverPick`).
+--       about keyboard keys, the wheel and mouse buttons past the third,
+--       and is kept for keys added on the later pages (`hoverPick`).
 --    3. Your buttons: every mouse button and the wheel, each with Plain,
 --       Shift, Ctrl and Alt switches. Extra mouse buttons are added by
 --       clicking them, keyboard keys by pressing them.
@@ -70,10 +70,11 @@ local HOVER_MODES = {
     { id = "hover", text = "Any unit under the cursor",
       note = "Your keys also cast on a character in the world or on a nameplate, without targeting it. "
           .. "ClickLegend then has those keys all the time: what the game had on them stops, "
-          .. "and with nothing under the cursor they do nothing." },
+          .. "and with nothing under the cursor they do nothing. The wheel still zooms the camera there." },
     { id = "target", text = "Under the cursor, else my target",
       note = "As above, and with nothing fitting under the cursor the same spell goes to your target, "
-          .. "so the key always does something. What most people who cast by mouseover want." },
+          .. "so the key always does something. What most people who cast by mouseover want. "
+          .. "The wheel is left out of that part: away from a unit it zooms the camera." },
 }
 local MODIFIER_KEY = {
     LSHIFT = true, RSHIFT = true, LCTRL = true, RCTRL = true, LALT = true, RALT = true,
@@ -606,8 +607,8 @@ local function Build(parent, w)
     f.hoverFoot:SetPoint("TOPLEFT", 0, -312)
     f.hoverFoot:SetWidth(w)
     f.hoverFoot:SetJustifyH("LEFT")
-    f.hoverFoot:SetText("This is about keyboard keys and extra mouse buttons (the fourth and up). Left, right and middle click "
-        .. "and the wheel stay on unit frames, with or without Shift, Ctrl or Alt: the game needs them in the world. "
+    f.hoverFoot:SetText("This is about keyboard keys, the wheel and extra mouse buttons (the fourth and up). Left, right and "
+        .. "middle click stay on unit frames, with or without Shift, Ctrl or Alt: the game needs them in the world. "
         .. "A single key can be set either way later: Bindings tab, click the key.")
 
     -- Your side buttons: a box per button of the block, and a wide box that
