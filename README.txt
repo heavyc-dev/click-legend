@@ -41,9 +41,11 @@ The legend
 
 Click casting of its own (optional, off until you switch it on)
   ClickLegend can also do the click casting. Open /clg, Bindings tab.
-  The quick way: press Guided setup, pick the ready-made set for your
-  class, press "Use it and turn on". Two clicks. Everything below is for
-  changing it afterwards.
+  Press Guided setup, pick the ready-made set for your class and press
+  Next: the steps ask whether your keys should cast on units in the world
+  (hover casting), which buttons you use and what each should do. In a
+  hurry: "Skip the setup: use it and turn on" takes the set as it is.
+  Everything below is for changing it afterwards.
   - The tab has two halves: your keys on the left, and on the right the
     rules of the key you click. The two icons beside a key are what it
     casts on an ally and on an enemy.
@@ -84,7 +86,11 @@ Click casting of its own (optional, off until you switch it on)
   - Sets are shared by all your characters. Each character picks its set,
     and a spec can have a set of its own (More..., Use this set for this
     spec only).
-  - Guided setup, the long way: switch on the buttons you want to set up
+  - Guided setup, hover casting: unit frames only, any unit under the
+    cursor, or under the cursor and else your target. It covers keyboard
+    keys and extra mouse buttons (the fourth and up); left, right and
+    middle click and the wheel stay on unit frames.
+  - Guided setup, your buttons: switch on the buttons you want to set up
     (left, right, middle, wheel up and down, your extra mouse buttons:
     click them to add them, and keyboard keys: press them to add them),
     each plain or with Shift, Ctrl or Alt. One page then lists those keys

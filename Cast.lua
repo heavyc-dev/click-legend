@@ -1534,35 +1534,48 @@ function Edit.RemoveAction(action)
     return removed
 end
 
--- The keyboard keys of the set in use (not mouse buttons, not the wheel):
--- how many there are, and how many of them work anywhere.
-local function KeyboardKeys()
-    local set = ActiveSet()
-    local count, anywhere = 0, 0
-    for _, binding in ipairs(set and set.bindings or {}) do
-        local _, key = ParseKey(binding.key)
-        if not key:match("^BUTTON%d+$") and not key:match("^MOUSEWHEEL") then
-            count = count + 1
-            if binding.hover then anywhere = anywhere + 1 end
-        end
-    end
-    return count, anywhere
+-- True for a key that "hover casting" as a whole is about: a keyboard key or
+-- a mouse button past the third. Left, right and middle click and the wheel
+-- have a use in the world that a player would miss.
+local function HoverKey(keyStr)
+    local _, key = ParseKey(keyStr)
+    if key:match("^MOUSEWHEEL") then return false end
+    local n = tonumber(key:match("^BUTTON(%d+)$"))
+    return n == nil or n > 3
 end
 
--- Every keyboard key of the set in use: anywhere (and else on the target, so
--- that the key is not dead away from a unit), or on unit frames only.
-function Edit.SetHoverKeys(on)
+-- Those keys of the set in use: how many there are, how many of them work
+-- anywhere, and how many of those go on to the target.
+local function KeyboardKeys()
     local set = ActiveSet()
-    if not set then return false end
-    for _, binding in ipairs(set.bindings) do
-        local _, key = ParseKey(binding.key)
-        if not key:match("^BUTTON%d+$") and not key:match("^MOUSEWHEEL") then
-            binding.hover = on and true or nil
-            binding.orTarget = on and true or nil
+    local count, anywhere, onTarget = 0, 0, 0
+    for _, binding in ipairs(set and set.bindings or {}) do
+        if HoverKey(binding.key) then
+            count = count + 1
+            if binding.hover then anywhere = anywhere + 1 end
+            if binding.hover and binding.orTarget then onTarget = onTarget + 1 end
         end
     end
-    CastChanged()
-    return true
+    return count, anywhere, onTarget
+end
+
+-- Every such key of the set in use: anywhere, or on unit frames only. Anywhere
+-- goes on to the target (so that the key is not dead away from a unit) unless
+-- `orTarget` is false. False when nothing had to change.
+function Edit.SetHoverKeys(on, orTarget)
+    local set = ActiveSet()
+    if not set then return false end
+    local hover = on and true or nil
+    local target = on and orTarget ~= false and true or nil
+    local changed = false
+    for _, binding in ipairs(set.bindings) do
+        if HoverKey(binding.key) and (binding.hover ~= hover or binding.orTarget ~= target) then
+            binding.hover, binding.orTarget = hover, target
+            changed = true
+        end
+    end
+    if changed then CastChanged() end
+    return changed
 end
 
 -------------------------------------------------------------------------------

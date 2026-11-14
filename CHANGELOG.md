@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.5
+Changed:
+- Guided setup has a step of its own for hover casting, second in line: "Unit frames only", "Any unit under the cursor" or "Under the cursor, else my target", each with what it means and what it takes from the game. It replaces the "Keyboard keys work on any unit under the cursor" switch on the options page. The choice covers keyboard keys and extra mouse buttons (the fourth and up), including ones you add on the later steps. Left, right and middle click and the wheel stay on unit frames.
+- Guided setup: Next is the button that stands out, and the first page says what the steps ask. The short way out is still there as "Skip the setup: use it and turn on", bottom left, no longer the highlighted button.
+
 ## 2.1.4
 Changed:
 - The small mouse beside each spell is larger: about four fifths of a spell icon (it was 20 pixels whatever the icon size), and never larger than an icon. A higher Label size still makes it bigger. The arrow that marks wheel up and down grows with it.
