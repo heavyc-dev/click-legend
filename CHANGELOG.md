@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.4
+Changed:
+- The small mouse beside each spell is larger: about four fifths of a spell icon (it was 20 pixels whatever the icon size), and never larger than an icon. A higher Label size still makes it bigger. The arrow that marks wheel up and down grows with it.
+- In the vertical layout the mouse sits in the middle of its column. It used to be pushed against the icons.
+- With labels above the icons (the rows layout) the legend is a few pixels taller, to make room.
+
 ## 2.1.3
 New:
 - A key that works anywhere can go on to your target: Edit the key, "Under the cursor, else my target". With nothing fitting under the cursor the same spells are cast on your target, so the key is no longer dead away from a unit. The guided setup's "Keyboard keys work on any unit under the cursor" now sets this too. It needs a key whose rules are all spells or items, and room in the key's 255 characters; the editor says when it cannot be done.

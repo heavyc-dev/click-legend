@@ -335,9 +335,26 @@ local function GlyphSize()
     return half * 2 + 1, gh, half, floor(gh * 0.45 + 0.5)
 end
 
+-- The side of the square the mouse picture is drawn in as a label: about three
+-- times the label size and at least four fifths of a spell icon, so that it
+-- reads beside one, and never larger than an icon, or the labels of
+-- neighbouring keys would meet.
+local function ArtSide()
+    local least = db.labelSize + 11
+    local wanted = max(db.labelSize * 3 + 2, floor(db.iconSize * 0.8))
+    return max(least, min(wanted, db.iconSize))
+end
+
+-- True when the labels are the mouse picture (and not the drawn rectangles).
+local function ArtLabels()
+    local L = MOUSE and (MOUSE[db.mousePic] or MOUSE.a)
+    return db.labelStyle == "icon" and L and L.small and true or false
+end
+
 -- The height the label row needs (horizontal layout) for the current style.
 local function LabelHeight()
     if not db.labels or db.labelStyle == "corner" then return 0 end
+    if ArtLabels() then return ArtSide() + 1 end
     if db.labelStyle == "icon" then return db.labelSize + 12 end
     return db.labelSize + 3
 end
@@ -345,6 +362,7 @@ end
 -- The width the label column needs (vertical layout).
 local function LabelWidth()
     if not db.labels or db.labelStyle == "corner" then return 0 end
+    if ArtLabels() then return max(db.labelSize * 3 + 7, ArtSide() + 5) end
     return db.labelSize * 3 + 7
 end
 
@@ -410,7 +428,7 @@ local function DrawGlyph(g, key)
     local region = small and MouseKeys(L)[key]
     local cell = region and small.cells[region]
     if cell or (small and MouseRank(key)) then
-        local side = gh + 6                                 -- square: the picture carries its own margins
+        local side = ArtSide()                              -- square: the picture carries its own margins
         g:SetSize(side, side)
         g.outline:Hide()
         g.body:Hide()
@@ -422,14 +440,15 @@ local function DrawGlyph(g, key)
                 -- The wheel alone would read as a middle click: an arrow in the
                 -- palm says which way it turns.
                 local top = floor(side * 0.62)
+                local u = max(1, floor(side / 14))          -- the arrow grows with the picture
                 for row = 1, 3 do
-                    local w = (key == "MOUSEWHEELUP") and (row * 2 - 1) or (7 - row * 2)
-                    GlyphRect(g, g.tri[row], (side - 2) / 2 - (w - 1) / 2 - 0.5, top + row - 1, w, 1)
+                    local w = ((key == "MOUSEWHEELUP") and (row * 2 - 1) or (7 - row * 2)) * u
+                    GlyphRect(g, g.tri[row], (side - 2) / 2 - w / 2, top + (row - 1) * u, w, u)
                 end
             end
         else
             local n = key:match("^BUTTON(%d+)$")                    -- a button the picture does not have
-            GlyphText(g, n or "", max(6, db.labelSize - 2), (side - 2) / 2, side * 0.68)
+            GlyphText(g, n or "", max(6, db.labelSize), (side - 2) / 2, side * 0.68)
         end
         return
     end
@@ -720,7 +739,11 @@ local function LayoutVertical(draw, sec, ox, oy)
             PlaceCell(draw, sec, key, side, x, y, size, slot[side], side == keyed)
         end
         if db.labels and db.labelStyle ~= "corner" then
-            PlaceLabel(draw, key, "RIGHT", x0 + labelW - 4, y - size / 2, sec.labelAlpha)
+            if db.labelStyle == "icon" then                 -- a picture sits in the middle of its column
+                PlaceLabel(draw, key, "CENTER", x0 + (labelW - 4) / 2, y - size / 2, sec.labelAlpha)
+            else
+                PlaceLabel(draw, key, "RIGHT", x0 + labelW - 4, y - size / 2, sec.labelAlpha)
+            end
         end
     end
     return blocks * blockW + (blocks - 1) * BLOCK_GAP, top + min(#keys, per) * (size + gap) - gap
