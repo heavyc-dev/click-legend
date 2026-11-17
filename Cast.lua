@@ -560,7 +560,8 @@ end
 
 -- "[@mouseover,help,dead]": the unit under the cursor, and the rule's
 -- conditions in a fixed order. "exists" is only spelled out when nothing else
--- already implies it; macro text is short of room.
+-- already implies it; macro text is short of room. ("nodead" does not: a
+-- condition with "no" in front may hold for a unit that is not there.)
 -- With `onTarget` the clause is for the player's target instead (no unit
 -- named, which is what a macro takes as the target): "[help,nodead]", "[]".
 -- A rule that names its own unit (`when.unit`) is about that unit instead:
@@ -569,7 +570,7 @@ local function Clause(when, onTarget)
     local parts = {}
     if not onTarget then
         parts[1] = "@" .. (when.unit or "mouseover")
-        if not when.reaction and when.dead == nil and when.unit ~= "player" then parts[#parts + 1] = "exists" end
+        if not when.reaction and when.dead ~= true and when.unit ~= "player" then parts[#parts + 1] = "exists" end
     end
     if when.reaction then parts[#parts + 1] = when.reaction end
     if when.dead ~= nil then parts[#parts + 1] = when.dead and "dead" or "nodead" end
@@ -702,7 +703,8 @@ local ActionEntry                  -- defined with the legend's reader, below
 --        = "macro"      run the player's macro `macro`
 --        = "macrotext"  run `text`. "{menu}" stands for the frame's menu
 --                       helper and "{rank:ID}" for the helper that casts that
---                       exact spell rank; Provider.lua fills them in.
+--                       exact spell rank ("{rank:ID:unit}" for a rule with a
+--                       unit of its own); Provider.lua fills them in.
 --   length, tooLong     size of the text once the helpers are named
 --   onTarget            the key also casts on the target (see binding.orTarget)
 --   zoom                a wheel key to be held only while a unit is under the cursor
@@ -763,8 +765,12 @@ local function CompileBinding(binding)
     -- /stopmacro naming every earlier clause, so one rule fires at most.
     -- A line with an item or trinket on it is written as /use.
     local lines, earlier, castParts, castVerb = {}, {}, nil, nil
+    local lineParts, lineVerb, lastPlain = nil, nil, 0      -- the last /cast line, and its last part about the cursor's unit
     local function CloseCast()
-        if castParts then lines[#lines + 1] = castVerb .. " " .. tconcat(castParts, "; "); castParts = nil end
+        if castParts then
+            lines[#lines + 1] = castVerb .. " " .. tconcat(castParts, "; ")
+            lineParts, lineVerb, castParts = castParts, castVerb, nil
+        end
     end
     local ownLines = false
     local function OwnLine(text)
@@ -821,9 +827,12 @@ local function CompileBinding(binding)
                 if onTarget then elseClauses[#elseClauses + 1] = onTarget end
             end
             castParts[#castParts + 1] = clause .. " " .. token
+            if not rule.when.unit then lastPlain = #castParts end
             if onTarget then elseParts[#elseParts + 1] = onTarget .. " " .. token end
         elseif action.type == "spell" then
-            OwnLine("/click " .. clause .. " {rank:" .. action.spellID .. "}")
+            -- The helper casts on a unit of its own, so it is told the rule's.
+            OwnLine("/click " .. clause .. " {rank:" .. action.spellID
+                .. (rule.when.unit and (":" .. rule.when.unit) or "") .. "}")
             castClauses[#castClauses + 1] = clause
         elseif action.type == "text" then
             -- The player's own text runs as written, once no earlier rule has fired.
@@ -845,7 +854,13 @@ local function CompileBinding(binding)
             if i < #live then
                 out.problems[#out.problems + 1] = (#live - i) .. " rule(s) after "
                     .. (rule.when.unit and "a rule that always casts on yourself" or "an unconditional rule") .. " can never fire."
-                out.fix = out.fix or { rule = from[i], last = true }
+                -- Moving it last mends that, unless a later rule always fits too
+                -- (then one of the two has to go, which is the player's call).
+                local again = from[#live] == from[i]
+                for j = i + 1, #live do
+                    if Always(live[j].when) and (live[j].when.unit or not binding.hover) then again = true end
+                end
+                if not again then out.fix = out.fix or { rule = from[i], last = true } end
             end
             break
         end
@@ -859,12 +874,22 @@ local function CompileBinding(binding)
     -- target: the same spells under the same conditions, tried when none of
     -- them fits the unit under the cursor or nothing is there. That is what
     -- keeps a key that works anywhere from being dead away from a unit.
+    -- The target's parts stand right after the last rule about the cursor's
+    -- unit: in front of a rule that casts on the player, which always fits
+    -- and would otherwise keep the target from ever being tried.
     local function Build(onTarget)
         local all = {}
         for i, line in ipairs(lines) do all[i] = line end
         local when = tconcat(castClauses)
         if onTarget and #elseParts > 0 then
-            all[1] = all[1] .. "; " .. tconcat(elseParts, "; ")
+            local parts = {}
+            for i, part in ipairs(lineParts) do
+                parts[#parts + 1] = part
+                if i == lastPlain then
+                    for _, extra in ipairs(elseParts) do parts[#parts + 1] = extra end
+                end
+            end
+            all[1] = lineVerb .. " " .. tconcat(parts, "; ")
             when = when .. tconcat(elseClauses)
         end
         if binding.pre and #castClauses > 0 then
@@ -886,7 +911,7 @@ local function CompileBinding(binding)
         if ownLines or #lines ~= 1 then
             out.problems[#out.problems + 1] = "\"Else my target\" needs a key whose rules are all spells or items; "
                 .. "this key works on the unit under the cursor only."
-        else
+        elseif #elseParts > 0 then      -- else every rule names its own unit: nothing to add
             local text, length = Build(true)
             if length > MACRO_LIMIT then
                 out.problems[#out.problems + 1] = "No room left for \"else my target\" on this key; "
@@ -1070,7 +1095,9 @@ local function Shadowed()
     local set = ActiveSet()
     if not (set and GetBindingAction) then return out end
     for _, binding in ipairs(set.bindings) do
-        if binding.hover then
+        local _, bare = ParseKey(binding.key)
+        -- A wheel key held only while a unit is under the cursor leaves the zoom alone.
+        if binding.hover and not (ZOOM[bare] and not binding.orTarget) then
             local ok, action = pcall(GetBindingAction, binding.key)
             if ok and type(action) == "string" and action ~= "" and not action:find("ClickLegend", 1, true) then
                 local named = _G["BINDING_NAME_" .. action]
@@ -1466,7 +1493,13 @@ end
 function Edit.FixOrder(bindingIndex)
     local _, binding = Target(bindingIndex)
     if not binding then return false end
-    local moved = false
+    local function Order()
+        local names = {}
+        for i, rule in ipairs(binding.rules) do names[i] = tostring(rule) end
+        return tconcat(names, ",")
+    end
+    local first = Order()
+    local seen = { [first] = true }
     for _ = 1, 12 do                    -- one move may uncover the next problem
         local fix = CompileBinding(binding).fix
         if not (fix and binding.rules[fix.rule]) then break end
@@ -1476,9 +1509,11 @@ function Edit.FixOrder(bindingIndex)
         else
             table.insert(binding.rules, fix.before, rule)   -- `before` is above `rule`, so it has not moved
         end
-        moved = true
+        local now = Order()
+        if seen[now] then break end     -- going round in circles: moving rules cannot mend this one
+        seen[now] = true
     end
-    if not moved then return false end
+    if Order() == first then return false end
     CastChanged()
     return true
 end
@@ -1517,6 +1552,10 @@ local QuickSlots                -- defined with Quickbind, below
 local function FreshSide(rule)
     if not rule.fresh then return end
     rule.fresh = nil
+    if rule.action.type == "macro" then         -- a saved macro only runs with no conditions
+        rule.when = {}
+        return
+    end
     local slots = QuickSlots(rule.action)
     if #slots == 2 then
         rule.when = {}
@@ -1650,7 +1689,8 @@ function Edit.SetSlot(keyStr, slot, action)
     local rules = {}
     for _, rule in ipairs(old) do
         local when = rule.when
-        if when.reaction == nil and when.dead == nil and Plain(when) then
+        local whole = rule.action.type == "text" or rule.action.type == "macro"    -- these take no conditions
+        if when.reaction == nil and when.dead == nil and Plain(when) and not whole then
             -- A rule for anyone becomes one for allies and one for enemies, so
             -- that one side can be changed without the other.
             if slot ~= "ally" then rules[#rules + 1] = { when = { reaction = "help" }, action = rule.action } end
@@ -1661,11 +1701,12 @@ function Edit.SetSlot(keyStr, slot, action)
     end
     if clean then
         -- Dead-ally rules go first, then the ally rule, then the enemy rule;
-        -- the rule on the player is the last of all, since it always fits.
+        -- the rule on the player is the last of all, since it always fits
+        -- (as does macro text: the enemy rule goes above either).
         local at = #rules + 1
         if slot == "enemy" then
             for i, rule in ipairs(rules) do
-                if InSlot(rule.when, "self") then at = i; break end
+                if Always(rule.when) then at = i; break end
             end
         elseif slot ~= "self" then
             at = 1
@@ -1724,6 +1765,20 @@ function Edit.Quickbind(keyStr, action)
         local ok, name = NewSet(FreeName("My bindings"))
         if not ok then return false, "Make or pick a set first." end
         UseSet(name)
+    end
+    if clean.type == "macro" then
+        -- A saved macro only runs as the single rule of a key, with no
+        -- conditions: it takes the key over.
+        local set, key = ActiveSet(), CanonicalKey(keyStr)
+        local index = FindBinding(set, key)
+        local rules = { Normalise({ when = {}, action = clean }) }
+        if index then
+            set.bindings[index].rules = rules
+        else
+            set.bindings[#set.bindings + 1] = { key = key, rules = rules }
+        end
+        CastChanged()
+        return true, "the whole key"
     end
     local words = {}
     for _, slot in ipairs(QuickSlots(clean)) do
@@ -2073,7 +2128,10 @@ end
 local function CanUndo()
     -- A step for a set that is gone (deleted, renamed) cannot be taken.
     while #undo > 0 and not (sets and sets[undo[#undo].name]) do undo[#undo] = nil end
-    return #undo > 0
+    -- Nor one for a set this character is not using now: it would change a
+    -- set that is not on screen. It waits until that set is picked again.
+    local _, name = ActiveSet()
+    return #undo > 0 and undo[#undo].name == name
 end
 
 local function Undo()
@@ -2208,6 +2266,21 @@ ns.SetCastFrames    = SetCastFrames
 ns.SetSideKey       = SetSideKey
 ns.SideKeys         = SideKeys
 ns.SetNames         = SetNames
+-- How much of a set this character can cast: spell rules it has, and in all.
+ns.SetFit = function(name)
+    local set = sets and sets[name]
+    local known, total = 0, 0
+    for _, binding in ipairs(set and set.bindings or {}) do
+        for _, rule in ipairs(binding.rules) do
+            local kind = rule.action.type
+            if kind == "spell" or kind == "dispel" or kind == "rez" then
+                total = total + 1
+                if not Unavailable(rule.action) then known = known + 1 end
+            end
+        end
+    end
+    return known, total
+end
 ns.SetSpecOnly      = SetSpecOnly
 ns.SpecState        = SpecState
 ns.SlotAction       = SlotAction

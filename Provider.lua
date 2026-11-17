@@ -86,19 +86,30 @@ local function MenuProxyName(frame)
     return b:GetName()
 end
 
-local function RankProxyName(id)
-    local name = rankProxy[id]
+-- One helper for each spell rank and the unit it is cast on: the helper
+-- casts on its own `unit`, whatever the condition in front of the /click
+-- looked at. The unit under the cursor unless the rule names another.
+local RANK_UNIT = { player = "P", target = "T", focus = "F", targettarget = "TT", pet = "Pet" }
+local function RankProxyName(id, unit)
+    if not RANK_UNIT[unit] then unit = nil end
+    local key = id .. (unit or "")
+    local name = rankProxy[key]
     if not name then
-        name = "ClgRank" .. id                  -- short, as for the menu helper
+        name = "ClgRank" .. id .. (unit and RANK_UNIT[unit] or "")     -- short, as for the menu helper
         local b = HelperButton(name, UIParent)
         b:SetSize(1, 1)
         b:SetAttribute("type", "spell")
         for i = 1, 5 do b:SetAttribute("type" .. i, "spell") end
         b:SetAttribute("spell", id)
-        b:SetAttribute("unit", "mouseover")
-        rankProxy[id] = name
+        b:SetAttribute("unit", unit or "mouseover")
+        rankProxy[key] = name
     end
     return name
+end
+
+-- "{rank:ID}" and "{rank:ID:unit}" in a key's text become the helper's name.
+local function FillRanks(text)
+    return (text:gsub("{rank:(%d+):?(%a*)}", function(id, unit) return RankProxyName(tonumber(id), unit) end))
 end
 
 -------------------------------------------------------------------------------
@@ -133,6 +144,9 @@ local function MacroBody(name)
     return nil
 end
 
+-- Every way of holding Alt, Ctrl and Shift, as the game spells attribute prefixes.
+local MOD_PREFIXES = { "alt-", "ctrl-", "shift-", "alt-ctrl-", "alt-shift-", "ctrl-shift-", "alt-ctrl-shift-" }
+
 local function BuildPlan()
     local plan, keys, hover = {}, {}, {}    -- fresh ones each time
     local settings = API.Settings()
@@ -142,9 +156,10 @@ local function BuildPlan()
     for _, binding in ipairs(set.bindings) do
         local mods, key = ParseKey(binding.key)
         local button = tonumber(key:match("^BUTTON(%d+)$"))
-        -- A unit frame is only ever clicked with mouse buttons 1 to 5. A button
-        -- past those reaches the game as a key, so it is bound like one.
-        if button and button > 5 then button = nil end
+        -- Whether a mouse button past the fifth reaches a unit frame as a click
+        -- or reaches the game as a key is not known for this client, so it is
+        -- bound both ways. Only one of the two can happen for one press.
+        local asKey = not button or button > 5
         local prefix = AttributePrefix(mods)
         if prefix then
             local compiled = API.CompileBinding(binding)
@@ -166,13 +181,29 @@ local function BuildPlan()
             end
             if anywhere then hover[#hover + 1] = { key = mods .. key, text = text, zoom = compiled.zoom } end
             if text and button then
-                -- A plain mouse button with a rule that asks for an extra modifier
-                -- must also answer when that modifier is held: "*" is any modifier.
-                -- A key bound with that modifier itself still wins, being exact.
-                if prefix == "" and API.UsesExtraModifier(binding) then prefix = "*" end
-                plan[#plan + 1] = { prefix = prefix, button = button, text = text }
-            elseif text and not anywhere then
+                plan[#plan + 1] = { prefix = prefix, button = button, text = text,
+                    any = (prefix == "" and API.UsesExtraModifier(binding)) or nil }
+            end
+            if text and asKey and not anywhere then
                 keys[#keys + 1] = { key = mods .. key, text = text }
+            end
+        end
+    end
+    -- A plain mouse button with a rule that asks for an extra modifier must
+    -- also answer when that modifier is held. It is written out for every
+    -- combination that has no key of its own. (Not as "*type1", any modifier:
+    -- the game's own frames put "*type1" and "*type2" back to targeting and
+    -- the menu whenever their unit changes, and leave exact names alone.)
+    local has = {}
+    for _, p in ipairs(plan) do has[p.prefix .. p.button] = true end
+    for i = 1, #plan do
+        local p = plan[i]
+        if p.any then
+            for _, extra in ipairs(MOD_PREFIXES) do
+                if not has[extra .. p.button] then
+                    has[extra .. p.button] = true
+                    plan[#plan + 1] = { prefix = extra, button = p.button, text = p.text }
+                end
             end
         end
     end
@@ -187,7 +218,7 @@ local function DesiredFor(frame, plan, hasKeys)
         local text = p.text
         if text:find("{", 1, true) then
             text = text:gsub("{menu}", function() return MenuProxyName(frame) end)
-            text = text:gsub("{rank:(%d+)}", function(id) return RankProxyName(tonumber(id)) end)
+            text = FillRanks(text)
         end
         want[p.prefix .. "type" .. p.button] = "macro"
         want[p.prefix .. "macrotext" .. p.button] = text
@@ -377,7 +408,7 @@ local function SyncKeys(keys, hover)
         local text = k.text
         if text:find("{", 1, true) then
             text = text:gsub("{menu}", "ClickLegendCastHoverMenu")
-            text = text:gsub("{rank:(%d+)}", function(id) return RankProxyName(tonumber(id)) end)
+            text = FillRanks(text)
         end
         want["*type-clgh" .. i] = "macro"
         want["*macrotext-clgh" .. i] = text
@@ -388,7 +419,7 @@ local function SyncKeys(keys, hover)
         if text:find("{", 1, true) then
             if text:find("{menu}", 1, true) then menu = true end
             text = text:gsub("{menu}", "ClickLegendCastKeyMenu")
-            text = text:gsub("{rank:(%d+)}", function(id) return RankProxyName(tonumber(id)) end)
+            text = FillRanks(text)
         end
         -- "*": whatever modifiers are held when the key's click arrives.
         want["*type-" .. suffix] = "macro"
@@ -471,7 +502,7 @@ local function SyncRegisterSnippet()
                 text = table.concat(kept, "\n")
             end
             if text ~= "" then
-                text = text:gsub("{rank:(%d+)}", function(id) return RankProxyName(tonumber(id)) end)
+                text = FillRanks(text)
                 local kind, body = p.prefix .. "type" .. p.button, p.prefix .. "macrotext" .. p.button
                 set[#set + 1] = ("button:SetAttribute(%q, %q)"):format(kind, "macro")
                 set[#set + 1] = ("button:SetAttribute(%q, %q)"):format(body, text)

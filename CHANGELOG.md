@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.2.1
+Fixed:
+- Guided setup on a character with no set of its own started from another character's set and changed it for that character. It now starts from a starter set for your class unless the character can cast most of the other set, and the first page says when the set picked is shared by all your characters.
+- A lower spell rank on a rule that casts on yourself, your target or your focus was cast on the unit under the cursor instead.
+- "Else my target" never reached the target on a key that also had an "on myself" rule. The target is now tried before yourself.
+- A plain click with a "with Shift / Ctrl / Alt" rule could go back to targeting on the game's own raid and party frames after someone joined or left the group.
+- An "alive" rule with no ally or enemy condition could fire with no unit there and keep the rules after it from running.
+- The Fix button went round in circles on a key with two rules that always fit. It is no longer offered there: one of the two has to go.
+- A macro dragged onto a key, or put there with Quickbind, did nothing. A macro takes the whole key.
+- Guided setup: changing what a key does broke a macro text rule on the same key until the next reload.
+- Undo could change a set other than the one in use. It now waits until that set is picked again.
+- A wheel key that keeps the camera zoom was listed as taking the game's zoom binding.
+- The legend showed no HealBot bindings saved by current HealBot versions.
+- The game's own Click Casting bindings with Shift, Ctrl or Alt could be missing from the legend and from the warning that they override ClickLegend.
+- Mouse buttons past the fifth are now bound on unit frames both as a click and as a key.
+
 ## 2.2.0
 Added:
 - A rule can cast on someone other than the unit under the cursor: yourself, your target, your focus, your target's target or your pet. In a rule, "+ condition", "Cast on someone else". The rule's other conditions (ally, enemy, alive, dead) are then about that unit. Example on one key: ally under the cursor: heal; else on myself: heal. Such a rule is still only reached by a key press that ClickLegend has: on a unit frame, or anywhere for a key that works anywhere.

@@ -179,15 +179,19 @@ local function StartItems()
 end
 
 -- What the first page picks when nothing has been picked: the set in use,
--- else a set this account already has, else the first starter set for this
--- class, else an empty set.
+-- else a set this account already has when this character can cast most of
+-- it (a set is shared: another class's is no place to start from), else the
+-- first starter set for this class, else an empty set.
 local function DefaultStart()
     local items = StartItems()
     for _, item in ipairs(items) do
         if item.value == "keep" then return item.value end
     end
     for _, item in ipairs(items) do
-        if type(item.value) == "table" and item.value.use then return item.value end
+        if type(item.value) == "table" and item.value.use then
+            local known, total = ns.SetFit(item.value.use)
+            if total > 0 and known * 2 > total then return item.value end
+        end
     end
     for _, item in ipairs(items) do
         if item.note then return item.value end
@@ -1050,7 +1054,10 @@ Refresh = function()
 
     if onStart then
         f.head:SetText("Where to start")
-        f.text:SetText("Pick a ready-made set for your class, the set you already use, or nothing.")
+        f.text:SetText(type(value) == "table" and value.use
+            and "This set is shared by all your characters: what you change here changes it for them too. "
+                .. "Pick a ready-made set instead to leave it as it is."
+            or "Pick a ready-made set for your class, the set you already use, or nothing.")
         f.start.label:SetText(StartText(value))
         f.mouse.label:SetText(MOUSE_LAYOUTS[MousePick()].name)
     elseif onSide then

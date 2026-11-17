@@ -223,7 +223,9 @@ end
 -- ("ALT-SHIFT"). Rebuilt here in the canonical order.
 local function BlizzardMods(modifiers)
     if type(modifiers) ~= "number" or modifiers == 0 then return "" end
-    local fn = C_ClickBindings.GetStringFromModifiers
+    -- The game's own screen uses the global; the C_ClickBindings one is only
+    -- there while the game loads its deprecated names.
+    local fn = GetStringFromModifiers or C_ClickBindings.GetStringFromModifiers
     if type(fn) ~= "function" then return nil end
     local ok, text = pcall(fn, modifiers)
     if not ok or type(text) ~= "string" then return nil end
@@ -464,14 +466,15 @@ local HEALBOT_COMMANDS = {
 }
 
 -- "Alt-CtrlButton41" -> "ALT-CTRL-", "BUTTON4", spec 1. nil when the key is
--- not in that shape.
+-- not in that shape. Newer HealBot saves leave the spec off ("ShiftLeft",
+-- "Button4"): no spec is returned then, and the key counts for every spec.
 local function ParseHealBotKey(combo)
     if type(combo) ~= "string" then return nil end
     local mods, rest = "", combo
     for _, m in ipairs(HEALBOT_MODS) do
         if combo:sub(1, #m[1]) == m[1] then mods, rest = m[2], combo:sub(#m[1] + 1); break end
     end
-    local name, digits = rest:match("^(%a+)(%d+)")
+    local name, digits = rest:match("^(%a+)(%d*)")
     if not name then return nil end
     local fixed = HEALBOT_BUTTONS[name]
     if fixed then return mods, fixed, tonumber(digits:sub(1, 1)) end
@@ -481,6 +484,8 @@ local function ParseHealBotKey(combo)
         local n, spec = tonumber(digits:sub(1, len)), tonumber(digits:sub(len + 1, len + 1))
         if n and spec and n >= 4 and n <= 20 then return mods, "BUTTON" .. n, spec end
     end
+    local n = tonumber(digits)                      -- the button number alone
+    if n and n >= 4 and n <= 20 then return mods, "BUTTON" .. n end
     return nil
 end
 
@@ -523,7 +528,7 @@ local function CollectHealBotLayers()
         if type(list) ~= "table" then return end
         for combo, value in pairs(list) do
             local mods, key, keySpec = ParseHealBotKey(combo)
-            if mods and keySpec == spec then
+            if mods and (keySpec == nil or keySpec == spec) then
                 local entry = HealBotEntry(value, side)
                 if entry then PutEntry(layers, mods, key, side, entry) end
             end
