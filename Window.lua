@@ -15,14 +15,13 @@ ns.Subscribe("source", function(value) activeSource = value end)
 
 local Clamp, LongKey, Report, Safe, AllBoundKeys, ACCENT =
     ns.Clamp, ns.LongKey, ns.Report, ns.Safe, ns.AllBoundKeys, ns.ACCENT
-local ApplyFont, Refresh, ResolveFont, ApplyPreset =
-    ns.ApplyFont, ns.Refresh, ns.ResolveFont, ns.ApplyPreset
+local ApplyFont, Refresh, ResolveFont =
+    ns.ApplyFont, ns.Refresh, ns.ResolveFont
 local ExportSettings, GetColor, ImportSettings, OPTIONS =
     ns.ExportSettings, ns.GetColor, ns.ImportSettings, ns.OPTIONS
-local OptGet, OptSet, PAGES, PANEL_PAGES, PRESETS =
-    ns.OptGet, ns.OptSet, ns.PAGES, ns.PANEL_PAGES, ns.PRESETS
-local PRESET_NOTE, PRESET_ORDER, RebuildSettingsPages =
-    ns.PRESET_NOTE, ns.PRESET_ORDER, ns.RebuildSettingsPages
+local OptGet, OptSet, PAGES, PANEL_PAGES =
+    ns.OptGet, ns.OptSet, ns.PAGES, ns.PANEL_PAGES
+local RebuildSettingsPages = ns.RebuildSettingsPages
 local ResetSettings, SetColor, SetCustomPosition =
     ns.ResetSettings, ns.SetColor, ns.SetCustomPosition
 
@@ -42,6 +41,72 @@ local function GetEditor(parent, width) return ns.GetEditor(parent, width) end  
 local function RefreshEditor() ns.RefreshEditor() end                              -- Editor.lua
 
 local WIN_W, WIN_H, ROW_H, WIN_PAD = 400, 520, 26, 16
+local resetAsked = false            -- "Reset to defaults" was clicked once and waits for the second click
+
+-- A thin bar beside a scroll area: how far down it is, and a thumb to drag.
+-- Not there while everything fits. It stands just outside the area's right
+-- edge, so nothing in the area has to move for it. Returns the function
+-- that brings it up to date; the bar also follows the area by itself.
+local BAR_W, BAR_GAP, THUMB_MIN = 3, 4, 16
+function ns.AddScrollBar(scroll, content)
+    local bar = CreateFrame("Frame", nil, scroll)
+    bar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", BAR_GAP, 0)
+    bar:SetPoint("BOTTOMLEFT", scroll, "BOTTOMRIGHT", BAR_GAP, 0)
+    bar:SetWidth(BAR_W)
+    local track = bar:CreateTexture(nil, "BACKGROUND")
+    track:SetAllPoints()
+    track:SetColorTexture(1, 1, 1, 0.06)
+    local thumb = CreateFrame("Button", nil, bar)
+    thumb:SetWidth(BAR_W + 4)                   -- a little wider than it looks: easier to catch
+    local face = thumb:CreateTexture(nil, "ARTWORK")
+    face:SetPoint("TOP")
+    face:SetPoint("BOTTOM")
+    face:SetWidth(BAR_W)
+    face:SetColorTexture(1, 1, 1, 0.35)
+
+    -- The height on view, how far the content can move, the thumb's height.
+    local function Measure()
+        local view = tonumber((scroll:GetHeight())) or 0
+        local range = max(0, (tonumber((content:GetHeight())) or 0) - view)
+        return view, range, max(THUMB_MIN, math.min(view, view * view / (view + range)))
+    end
+    local function Update()
+        local view, range, size = Measure()
+        if range <= 0.5 or view <= THUMB_MIN then bar:Hide(); return end
+        local at = Clamp((tonumber((scroll:GetVerticalScroll())) or 0) / range, 0, 1)
+        thumb:SetHeight(size)
+        thumb:ClearAllPoints()
+        thumb:SetPoint("TOP", bar, "TOP", 0, -at * (view - size))
+        bar:Show()
+    end
+    local fromY, fromScroll
+    local function Drag()
+        local view, range, size = Measure()
+        local _, y = GetCursorPosition()
+        y = (tonumber(y) or 0) / (tonumber((bar:GetEffectiveScale())) or 1)
+        if view - size > 0 then
+            scroll:SetVerticalScroll(Clamp(fromScroll + (fromY - y) / (view - size) * range, 0, range))
+        end
+        Update()
+    end
+    thumb:SetScript("OnMouseDown", function(self)
+        local _, y = GetCursorPosition()
+        fromY = (tonumber(y) or 0) / (tonumber((bar:GetEffectiveScale())) or 1)
+        fromScroll = tonumber((scroll:GetVerticalScroll())) or 0
+        self:SetScript("OnUpdate", function() Safe(Drag) end)
+    end)
+    local function Let(self) self:SetScript("OnUpdate", nil) end
+    thumb:SetScript("OnMouseUp", Let)
+    thumb:SetScript("OnHide", Let)
+    local function Follow() Safe(Update) end
+    scroll:SetScript("OnVerticalScroll", Follow)
+    scroll:SetScript("OnScrollRangeChanged", Follow)
+    scroll:SetScript("OnSizeChanged", Follow)
+    scroll:SetScript("OnShow", Follow)
+    content:SetScript("OnSizeChanged", Follow)
+    bar:Hide()
+    return Follow
+end
 local WIN_BIND_W = 680              -- the Bindings tab is wider: keys on the left, a key's rules on the right
 local activeTab = nil               -- chosen when the window first opens (FirstTab)
 local function ShowMenu(...) return ns.ShowMenu(...) end                           -- Picker.lua
@@ -127,6 +192,7 @@ end
 local function NewOptionRow(parent, o)
     local row = CreateFrame("Frame", nil, parent)
     row:SetSize(WIN_W - WIN_PAD * 2, ROW_H)
+    row.when = o.when or false          -- shown only while this says so: a setting that does nothing now is left out
     if o.header then
         local text = NewText(row, 11, ACCENT[1], ACCENT[2], ACCENT[3])
         text:SetPoint("BOTTOMLEFT", 0, 5)
@@ -159,11 +225,11 @@ local function NewOptionRow(parent, o)
         b:SetScript("OnClick", function(self)
             local items = {}
             for i, value in ipairs(o.order) do
-                items[i] = { text = o.values[value], value = value, current = value == db[o.key] }
+                items[i] = { text = o.values[value], value = value, current = value == OptGet(o) }
             end
             ShowMenu(self, items, function(value) OptSet(o, value) end, { width = 200 })
         end)
-        row.Update = function() b.label:SetText(o.values[db[o.key]] or "?") end
+        row.Update = function() b.label:SetText(o.values[OptGet(o)] or "?") end
     elseif o.kind == "range" then
         -- Minus and plus step the value; hold Shift for steps of five.
         local plus = NewButton(row, 20, 20, "+")
@@ -270,6 +336,7 @@ local function BuildWindow()
         tab:SetPoint("TOPLEFT", WIN_PAD + (i - 1) * 74, -40)
         tab:SetScript("OnClick", function()
             CloseOverlays()
+            resetAsked = false
             activeTab = name
             f.scroll:SetVerticalScroll(0)
             RefreshWindow()
@@ -290,6 +357,7 @@ local function BuildWindow()
         self:SetVerticalScroll(Clamp((self:GetVerticalScroll() or 0) - delta * 40, 0, range))
     end)
     f.scroll, f.content = scroll, content
+    f.scrollBar = ns.AddScrollBar(scroll, content)
 
     f.rows = {}
     for _, name in ipairs(PAGES) do
@@ -322,15 +390,12 @@ local function BuildWindow()
         fs:SetText(text)
         return fs
     end
-    Heading("PRESETS", -4)
-    for i, id in ipairs(PRESET_ORDER) do
-        local b = NewButton(share, 70, 22, PRESETS[id].name)
-        b:SetPoint("TOPLEFT", (i - 1) * 74, -24)
-        b:SetScript("OnClick", function()
-            if ApplyPreset(id) then share.status:SetText(PRESETS[id].name .. " preset applied.") end
-        end)
-    end
-    Note(PRESET_NOTE, -54)
+    -- What is not here, and where it is: this tab used to hold the presets,
+    -- and is where a player looks for a way to share bindings.
+    Heading("WHAT IS WHERE", -4)
+    Note("Your bindings: Bindings tab, More..., Export this set as text. Sets are shared by all your characters.\n"
+        .. "Ready-made styles (Compact, Minimal and the others): top of the Look tab.\n"
+        .. "Below: the legend's own settings, as text to keep or send.", -24)
 
     Heading("IMPORT / EXPORT", -100)
     local box = CreateFrame("EditBox", nil, share)
@@ -347,7 +412,7 @@ local function BuildWindow()
     box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     share.box = box
 
-    local export = NewButton(share, 150, 24, "Export my settings")
+    local export = NewButton(share, 150, 24, "Export legend settings")
     export:SetPoint("TOPLEFT", 0, -148)
     export:SetScript("OnClick", function()
         if not db then return end
@@ -377,9 +442,22 @@ local function BuildWindow()
     bindings:Hide()
     f.bindings = bindings
 
-    local reset = NewButton(f, 110, 24, "Reset to defaults")
+    -- Asked twice: it puts every legend setting and the position back at once.
+    local reset = NewButton(f, 170, 24, "Reset to defaults")
     reset:SetPoint("BOTTOMLEFT", WIN_PAD, 14)
-    reset:SetScript("OnClick", function() if db then ResetSettings() end end)
+    reset:SetScript("OnClick", function()
+        if not db then return end
+        if resetAsked then
+            resetAsked = false
+            ResetSettings()
+        else
+            resetAsked = true
+            if C_Timer and C_Timer.After then
+                C_Timer.After(4, function() resetAsked = false; RefreshWindow() end)
+            end
+        end
+        RefreshWindow()
+    end)
     f.reset = reset
     f.hint = NewText(f, 10, 0.6, 0.6, 0.6)
     f.hint:SetPoint("BOTTOMRIGHT", -WIN_PAD, 20)
@@ -407,7 +485,7 @@ local function RefreshWindowNow()
     end
     for name, rows in pairs(f.rows) do
         for _, row in ipairs(rows) do
-            if name == activeTab then
+            if name == activeTab and (not row.when or row.when()) then
                 row.Update()
                 Place(row)
             else
@@ -436,10 +514,17 @@ local function RefreshWindowNow()
     f.content:SetHeight(max(y, 10))
     local range = max(0, y - (f.scroll:GetHeight() or 0))
     if (f.scroll:GetVerticalScroll() or 0) > range then f.scroll:SetVerticalScroll(range) end
+    f.scrollBar()
     f.hint:SetShown(activeTab == "Display" or activeTab == "Look")
     f.share:SetShown(activeTab == "Share")
     f.scroll:SetShown(activeTab ~= "Share" and activeTab ~= "Bindings")
     f.reset:SetShown(activeTab ~= "Bindings")        -- it resets the display settings, not bindings
+    f.reset.label:SetText(resetAsked and "Click again to reset it all" or "Reset to defaults")
+    if resetAsked then
+        f.reset.label:SetTextColor(0.95, 0.55, 0.3)
+    else
+        f.reset.label:SetTextColor(1, 1, 1)
+    end
     f.bindings:SetShown(activeTab == "Bindings")
     f:SetWidth(activeTab == "Bindings" and WIN_BIND_W or WIN_W)
     if activeTab == "Bindings" then

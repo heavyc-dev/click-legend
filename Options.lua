@@ -65,53 +65,49 @@ local OPTIONS = {
         { kind = "toggle", key = "hidden", invert = true, text = "Show the legend" },
         { kind = "toggle", key = "locked", text = "Lock position",
           tip = "Unlock to drag the legend, then lock it again. While unlocked, hovering an icon names its binding." },
-        { kind = "choice", key = "source", text = "Bindings from",
-          values = { auto = "Automatic", own = "ClickLegend", eui = "EllesmereUI HoverCast", clique = "Clique",
-                     vuhdo = "VuhDo", healbot = "HealBot", blizzard = "Game click casting" },
-          order = { "auto", "own", "eui", "clique", "vuhdo", "healbot", "blizzard" },
-          tip = "Automatic uses the first of these that has bindings, in this order. "
-              .. "Pick one when you have more than one set up." },
         { kind = "choice", key = "visibility", text = "Visible",
           values = { always = "Always", group = "In a group", combat = "In combat",
                      hover = "Hovering a unit frame" },
           order = { "always", "group", "combat", "hover" } },
-        { kind = "choice", key = "layers", text = "Modifier layers",
-          values = { held = "Held modifier only", all = "All at once" },
+        { kind = "choice", key = "layers", text = "Shift, Ctrl and Alt keys",
+          values = { held = "Show while held", all = "Always show" },
           order = { "held", "all" },
-          tip = "All at once stacks the Shift, Ctrl and Alt bindings under the plain ones, "
-              .. "so nothing has to be held to read them." },
+          tip = "Show while held: hold Shift, Ctrl or Alt to see the keys bound with it. "
+              .. "Always show stacks them under the plain ones, so nothing has to be held to read them." },
         { header = "LAYOUT" },
         { kind = "choice", key = "layout", text = "Layout",
           values = { horizontal = "Horizontal", vertical = "Vertical", mouse = "Mouse picture" },
           order = { "horizontal", "vertical", "mouse" },
-          tip = "Horizontal runs the buttons left to right; vertical runs them top to bottom. "
+          tip = "Horizontal runs the keys left to right; vertical runs them top to bottom. "
               .. "Mouse picture draws a mouse with each button's spells beside it; keyboard keys are listed under it." },
-        { kind = "choice", key = "mousePic", text = "Which mouse",
-          values = { a = "Rounded", b = "Angular", c = "Simple", d = "Twelve side buttons" },
-          order = { "a", "b", "c", "d" },
-          tip = "The mouse that is drawn: small, above each spell, with the bound button lit (label style Icons), "
-              .. "and large in the Mouse picture layout. For the one with twelve side buttons, the guided setup "
-              .. "asks you to press each of them, so that every spell lands on the right one." },
-        { kind = "range", key = "mouseSize", text = "Mouse picture size", lo = 96, hi = 256, step = 8 },
+        { kind = "range", key = "mouseSize", text = "Mouse picture size", lo = 96, hi = 256, step = 8,
+          when = function() return db.layout == "mouse" end },
         { kind = "choice", key = "rows", text = "Show",
           values = { both = "Ally and enemy", ally = "Ally only", enemy = "Enemy only" },
           order = { "both", "ally", "enemy" } },
-        { kind = "range", key = "perLine", text = "Buttons per line", lo = 2, hi = 24, step = 1 },
+        { kind = "range", key = "perLine", text = "Keys per line", lo = 2, hi = 24, step = 1,
+          when = function() return db.layout ~= "mouse" end },
         { header = "ICONS" },
-        { kind = "toggle", key = "flagMissing", text = "Grey out bindings that cannot fire",
-          tip = "Marks a binding whose spell is not learned or whose macro no longer exists." },
-        { kind = "toggle", key = "flagUnusable", text = "Show when a spell cannot be cast",
-          tip = "A cooldown sweeps over its icon, a spell you lack the mana for turns blue, "
-              .. "and one that cannot reach the unit under the cursor turns red." },
+        -- One switch for two settings (`/clg missing` and `/clg usable` still set them apart).
+        { kind = "toggle", text = "Mark spells that cannot be cast", refresh = true,
+          get = function() return db.flagMissing or db.flagUnusable end,
+          set = function(v) db.flagMissing, db.flagUnusable = v, v end,
+          tip = "A spell you have not learned, or a macro that is gone, is greyed out. A cooldown sweeps over its icon, "
+              .. "a spell you lack the mana for turns blue, and one that cannot reach the unit under the cursor "
+              .. "turns orange. The three colors are on the Look tab." },
         { kind = "toggle", key = "flash", text = "Flash an icon when its spell is cast",
           tip = "A short flash on the legend each time one of the shown spells goes off." },
         { header = "WHILE HOVERING A UNIT" },
-        { kind = "toggle", key = "hoverDim", text = "Step back the row that does not apply",
-          tip = "With the cursor on a friendly unit the enemy spells step back, and the other way round." },
-        { kind = "choice", key = "offStyle", text = "Spells that do not apply",
-          values = { dim = "Dim them", hide = "Hide them" }, order = { "dim", "hide" },
-          tip = "Hide takes the other side's row away, and leaves an empty place for a spell that cannot "
-              .. "reach the unit under the cursor, so the legend shows only what will work on that unit." },
+        -- One row for two settings (`hoverDim` and `offStyle`).
+        { kind = "choice", text = "Spells that do not apply", refresh = true,
+          values = { leave = "Leave them", dim = "Dim them", hide = "Hide them" }, order = { "leave", "dim", "hide" },
+          get = function() return db.hoverDim and db.offStyle or "leave" end,
+          set = function(v)
+              if v == "leave" then db.hoverDim = false else db.hoverDim, db.offStyle = true, v end
+          end,
+          tip = "With the cursor on a friendly unit the enemy spells do not apply, and the other way round. "
+              .. "Dim them fades them. Hide them takes the other row away, and leaves an empty place for a spell "
+              .. "that cannot reach that unit, so the legend shows only what will work on it." },
         { header = "POSITION" },
         { kind = "choice", key = "anchor", text = "Attach to",
           values = { screen = "Nothing (drag it)", party = "Party frames", cursor = "The cursor" },
@@ -119,21 +115,31 @@ local OPTIONS = {
           tip = "Party frames: the legend follows them, and uses the dragged position when none are on screen. "
               .. "The cursor: it stays beside the pointer; with Visible set to Hovering a unit frame it only "
               .. "appears where you are about to click." },
-        { kind = "choice", key = "anchorSide", text = "On which side",
+        { kind = "choice", key = "anchorSide", text = "Placement",
           values = { above = "Above", below = "Below", left = "Left", right = "Right" },
           order = { "above", "below", "left", "right" },
-          tip = "The side of the party frames, or of the cursor, the legend sits on." },
-        { kind = "range", key = "anchorGap", text = "Gap", lo = 0, hi = 60, step = 1 },
+          when = function() return db.anchor ~= "screen" end,
+          tip = "Where the legend sits beside the party frames, or beside the cursor." },
+        { kind = "range", key = "anchorGap", text = "Gap", lo = 0, hi = 60, step = 1,
+          when = function() return db.anchor ~= "screen" end },
         { header = "TOOLTIP" },
         { kind = "toggle", key = "tooltip", text = "Show bindings in unit tooltips",
           tip = "Hovering a friendly unit frame lists your ally spells; an enemy frame lists your enemy spells." },
         { kind = "toggle", key = "tooltipWorld", text = "Also on units in the world",
+          when = function() return db.tooltip end,
           tip = "Adds the bindings to tooltips of units you hover in the world, not only unit frames." },
         { header = "SETTINGS" },
+        { kind = "choice", key = "source", text = "Bindings from",
+          values = { auto = "Automatic", own = "ClickLegend", eui = "EllesmereUI HoverCast", clique = "Clique",
+                     vuhdo = "VuhDo", healbot = "HealBot", blizzard = "Game click casting" },
+          order = { "auto", "own", "eui", "clique", "vuhdo", "healbot", "blizzard" },
+          tip = "Whose bindings the legend shows. Automatic uses the first of these that has any, in this order. "
+              .. "Pick one when you have more than one set up." },
         { kind = "toggle", key = "minimap", text = "Minimap button",
           tip = "A button on the minimap: click for the settings, right click for the guided setup, drag to move it." },
-        { kind = "toggle", text = "Separate settings for this character",
-          tip = "Off: every character shares one set of settings. On: this character keeps its own, starting as a copy.",
+        { kind = "toggle", text = "Separate legend settings for this character",
+          tip = "Off: every character shares the legend's settings. On: this character keeps its own, starting as a copy. "
+              .. "Your bindings are not part of this: binding sets are always shared.",
           get = function() return type(ClickLegendCharDB) == "table" and ClickLegendCharDB.enabled == true end,
           set = function(v) SetCharacterProfile(v) end },
     },
@@ -141,27 +147,41 @@ local OPTIONS = {
         { header = "SIZE" },
         { kind = "range", key = "iconSize", text = "Icon size", lo = 16, hi = 64, step = 1 },
         { kind = "range", key = "spacing", text = "Icon spacing", lo = 0, hi = 10, step = 1 },
-        { kind = "range", key = "scale", text = "Scale", lo = 0.5, hi = 2, step = 0.05 },
+        { kind = "range", key = "scale", text = "Scale", lo = 0.5, hi = 2, step = 0.05,
+          tip = "Shrinks or grows the whole legend, labels included." },
         { kind = "range", key = "alpha", text = "Opacity", lo = 0.1, hi = 1, step = 0.05 },
         { header = "LABELS" },
-        { kind = "toggle", key = "labels", text = "Button labels" },
+        { kind = "toggle", key = "labels", text = "Key labels" },
         { kind = "choice", key = "labelStyle", text = "Label style",
           values = { text = "Text", icon = "Icons", corner = "On the icon" }, order = { "text", "icon", "corner" },
+          when = function() return db.labels end,
           tip = "Icons draw a small picture of your mouse with the bound button lit, and a keycap for keyboard keys. "
               .. "On the icon writes the key in the corner of the spell icon, which makes the legend smaller." },
-        { kind = "range", key = "labelSize", text = "Label size", lo = 7, hi = 14, step = 1 },
+        { kind = "range", key = "labelSize", text = "Label size", lo = 7, hi = 14, step = 1,
+          when = function() return db.labels end },
+        { kind = "choice", key = "mousePic", text = "Which mouse",
+          values = { a = "Rounded", b = "Angular", c = "Simple", d = "Twelve side buttons" },
+          order = { "a", "b", "c", "d" },
+          tip = "The mouse that is drawn: small, above each spell, with the bound button lit (label style Icons), "
+              .. "and large in the Mouse picture layout. For the one with twelve side buttons, the guided setup "
+              .. "asks you to press each of them, so that every spell lands on the right one." },
         { kind = "toggle", key = "bars", text = "Ally / enemy color bars" },
         { header = "COLORS" },
         { kind = "color", prefix = "ally", text = "Ally color" },
         { kind = "color", prefix = "enemy", text = "Enemy color" },
+        { kind = "color", prefix = "far", text = "Out of range", when = function() return db.flagUnusable end },
+        { kind = "color", prefix = "mana", text = "Not enough mana", when = function() return db.flagUnusable end },
+        { kind = "color", prefix = "cool", text = "On cooldown", when = function() return db.flagUnusable end },
         { header = "BACKGROUND" },
         { kind = "toggle", key = "background", text = "Show background" },
-        { kind = "color", prefix = "bg", alpha = true, text = "Background color and opacity" },
-        { kind = "range", key = "bgPadding", text = "Background padding", lo = 0, hi = 20, step = 1 },
+        { kind = "color", prefix = "bg", alpha = true, text = "Background color and opacity",
+          when = function() return db.background end },
+        { kind = "range", key = "bgPadding", text = "Background padding", lo = 0, hi = 20, step = 1,
+          when = function() return db.background end },
     },
     Order = {
         { header = "ORDER" },
-        { kind = "choice", key = "sort", text = "Sort buttons by",
+        { kind = "choice", key = "sort", text = "Sort keys by",
           values = { mouse = "Mouse buttons first", keyboard = "Keyboard keys first",
                      alpha = "Alphabetical", custom = "Custom" },
           order = { "mouse", "keyboard", "alpha", "custom" },
@@ -203,6 +223,21 @@ local PRESET_ORDER = { "default", "compact", "sidebar", "full", "minimal" }
 local PRESET_NOTE = "A preset changes the layout only; colors and order stay as they are. Minimal also puts the "
     .. "legend beside the cursor and shows it only on a unit frame; any other preset puts it back."
 
+-- Look starts with the ready-made styles: they set most of what follows.
+do
+    local values, order = { none = "Pick one..." }, { "none" }
+    for _, id in ipairs(PRESET_ORDER) do
+        values[id] = PRESETS[id].name
+        order[#order + 1] = id
+    end
+    table.insert(OPTIONS.Look, 1, { header = "STYLE" })
+    table.insert(OPTIONS.Look, 2, {
+        kind = "choice", text = "Start from a style", values = values, order = order, tip = PRESET_NOTE,
+        get = function() return "none" end,
+        set = function(v) if v ~= "none" then ns.ApplyPreset(v) end end,
+    })
+end
+
 OPTIONS.Share = {
     { header = "PRESETS" },
     { kind = "preset", text = "Apply a layout preset", tip = PRESET_NOTE },
@@ -218,7 +253,7 @@ local function CastFrames(group) local s = ns.CastSettings(); return s and s.fra
 
 OPTIONS.Bindings = {
     { header = "CLICK CASTING" },
-    { kind = "toggle", text = "Use ClickLegend's own click casting",
+    { kind = "toggle", text = "Click casting",
       tip = "On: clicks and keys on unit frames cast the bindings you set up in ClickLegend. "
           .. "Off: ClickLegend only shows bindings and changes nothing.",
       get = CastOn, set = function(v) ns.SetCastEnabled(v) end },
@@ -235,6 +270,7 @@ local PANEL_PAGES = { "Bindings", "Display", "Look", "Order", "Share" }
 local function RefreshWindow() ns.RefreshWindow() end     -- Window.lua
 
 local function OptGet(o)
+    if o.get and o.kind == "choice" then return o.get() end
     if o.get then return o.get() and true or false end
     if o.kind == "toggle" then return (not o.invert) == (db[o.key] and true or false) end
     return db[o.key]
@@ -244,8 +280,14 @@ end
 local function OptSet(o, v)
     if not db then return end
     if o.set then
-        o.set(v and true or false)          -- an option that manages its own state
-        return
+        -- An option that manages its own state; `refresh` when it writes settings the legend draws from.
+        if o.kind == "choice" then
+            if not o.values[v] then return end
+            o.set(v)
+        else
+            o.set(v and true or false)
+        end
+        if not o.refresh then return end
     elseif o.kind == "toggle" then
         db[o.key] = (not o.invert) == (v and true or false)
     elseif o.kind == "choice" then
@@ -430,7 +472,10 @@ local function BuildSettingsPage(pageName, parent, yOffset)
                 function(v) OptSet(o, v) end, o.tip)
         elseif o.kind == "choice" then
             _, h = W:Dropdown(parent, o.text, y, o.values,
-                function() return db and db[o.key] or DEFAULTS[o.key] end,
+                function()
+                    if o.get then return db and OptGet(o) or o.order[1] end
+                    return db and db[o.key] or DEFAULTS[o.key]
+                end,
                 function(v) OptSet(o, v) end, o.order, o.tip)
         elseif o.kind == "range" then
             _, h = W:Slider(parent, o.text, y, o.lo, o.hi, o.step,

@@ -1,5 +1,45 @@
 # Changelog
 
+## 2.2.0
+Added:
+- A rule can cast on someone other than the unit under the cursor: yourself, your target, your focus, your target's target or your pet. In a rule, "+ condition", "Cast on someone else". The rule's other conditions (ally, enemy, alive, dead) are then about that unit. Example on one key: ally under the cursor: heal; else on myself: heal. Such a rule is still only reached by a key press that ClickLegend has: on a unit frame, or anywhere for a key that works anywhere.
+- A key reads itself back in plain words above its rules: "Dead ally: Rebirth. Ally: Rejuvenation. Enemy: Moonfire. Otherwise on you: Rejuvenation." Point at the line for one part per line.
+- "Add a rule" asks what the key should also do: heal or help an ally, damage an enemy, resurrect a dead ally, else cast on myself, cast on my target, focus, target's target or pet, or a blank rule. The rule is put where it can fire (a resurrection first, "else on myself" last) and the list of spells opens.
+- Fix: when a rule can never fire because of the order, the line that says so has a Fix button that moves it.
+- Drag a spell, item or macro from the spellbook, your bags or the macro window onto a key in the list, or onto an icon of the unlocked legend: it goes on that key, on allies or enemies as the spell calls for.
+- Guided setup, "What they do": a fourth column, "Else, on myself", for what a key casts on you when nothing else fits.
+- Bindings tab, More...: "Sort the keys" (mouse first, then keyboard; each plain, then with Shift, Ctrl, Alt).
+- Quickbind: a > on a spell's row puts another spell in its place on every key it is on.
+- A key's hover casting button has "Set every hover casting key like this one".
+- Undo goes back up to eight steps.
+- Copy from Clique reads Clique's own list: a hovercast binding becomes a hover casting key, an out-of-combat one keeps that condition, macro text comes along as a macro text rule, and the keys arrive sorted.
+- Look tab: "Start from a style" at the top (the presets, which were on the Share tab).
+- Scroll bars: the settings pages, the lists of keys and rules, Quickbind and the guided setup's lists show a thin bar when there is more than fits, with a thumb to drag. The wheel scrolls as before.
+
+Changed:
+- On the legend a spell out of range is orange. It was red, which is also the default colour of the enemy side.
+- The three tints of a spell that cannot be cast are yours to pick: Look tab, "Out of range", "Not enough mana", "On cooldown", or `/clg rangecolor`, `/clg manacolor`, `/clg cooldowncolor` with six hex digits.
+- Guided setup: the steps are now where to start, your buttons, what they do, hover casting, done. Hover casting is asked after your keys, and only when you have a key it is about (a keyboard key, the wheel, a mouse button past the third). The options page is gone: its four switches are in the Bindings tab's More... menu and on the Display tab.
+- Guided setup: reaching the last step switches click casting on (it can be switched off there). Before, only the short way did, and Finish left it off.
+- Guided setup: a button switched off on "Your buttons" is taken out of the set when you go on, and the last step names what was taken out. Before, it kept casting.
+- Guided setup: sets your account already has are offered on the first page, so another character can use one as it is.
+- Guided setup, hover casting: when your keys differ (some set by hand in the editor), none of the three is marked and nothing changes unless you pick one. Before, "Unit frames only" showed as picked and clicking it took hover casting off every key.
+- Guided setup: the hover casting texts are a third as long; the wheel's note says what the wheel does as it is set; long spell names no longer run onto the next line.
+- "Add a key": the first spell you pick decides who the rule is for. A harmful spell goes on enemies, one that is both on anyone. Before, it was always "Ally", so a harmful spell never fired.
+- "Else, cast on myself" comes filled with the spell the key casts on an ally.
+- Fix mends every problem of order on the key in one click.
+- Picking, copying or making a set changes it for every spec that has no set of its own, as before, but now says so, with a button "Only <spec>" that keeps the others on the set they had. "Use this set for every spec" says that the other specs lose their own.
+- A character with no set on an account that has some is pointed to the Set button instead of being told there is none.
+- One name for it: "hover casting", with "Unit frames only", "Any unit under the cursor" and "Under the cursor, else my target" worded the same on the setup page, the key's button and its menu.
+- Bindings tab: the three switches for unit frames and "cast on press" moved into More...; the spell lists hide lower ranks until asked ("Show lower ranks too"); the room a key uses is said on the problems line.
+- Display tab: "Spells that do not apply" is one row (Leave, Dim, Hide) and "Mark spells that cannot be cast" is one switch, each in place of two; "Bindings from" moved down to Settings; a row that does nothing as things stand is left out (mouse size without the mouse layout, placement without something to attach to, label settings with labels off, and so on).
+- Wording: "keys" where "buttons" meant any bound key, "starter set" for a class's ready-made set, "legend settings" for what Share exports.
+- "Reset to defaults" asks for a second click.
+- The what's new and welcome texts are shorter, so that they fit their window.
+- On a key that works anywhere, a rule for yourself, your target or your focus after a rule with no condition is no longer reported as unable to fire: with nothing under the cursor it is the one that does.
+- The welcome and the hints no longer promise a setup "in two clicks"; they say what the guided setup asks.
+- What's new is shown once more, with this version's and the last few versions' additions.
+
 ## 2.1.6
 Changed:
 - Guided setup, hover casting: the choice now covers the wheel too, since it keeps its zoom. With "Under the cursor, else my target" the wheel is set to work on any unit under the cursor and does not go on to your target.

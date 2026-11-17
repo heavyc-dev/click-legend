@@ -15,7 +15,9 @@
 --            hover: the key works on any unit under the cursor, not only on
 --            unit frames (never plain left or right click)
 --            pre: done just before one of the key's spells is cast
---  rule    = { when = { reaction, dead, combat, form, pet, mod }, action = action }
+--  rule    = { when = { reaction, dead, combat, form, pet, mod, unit }, action = action }
+--            unit: who the rule acts on instead of the unit under the cursor
+--            ("player", "target", "focus", "targettarget", "pet")
 --  action  = { type = "spell", name, spellID, pinned }   pinned: cast this rank
 --          | { type = "item", name, itemID }
 --          | { type = "macro", name }
@@ -65,6 +67,7 @@ local ACTION_NAME = {
 local PRE_ORDER = { "stop", "trinket1", "trinket2" }
 local REACTIONS = { help = true, harm = true }
 local RULE_MODS = { shift = true, ctrl = true, alt = true }
+local RULE_UNITS = { player = true, target = true, focus = true, targettarget = true, pet = true }
 local MAX_FORM = 10
 
 -------------------------------------------------------------------------------
@@ -131,6 +134,7 @@ local function CleanWhen(w)
     out.dead, out.combat, out.pet = Flag(w.dead), Flag(w.combat), Flag(w.pet)
     out.form = WholeNumber(w.form, 0, MAX_FORM)
     if RULE_MODS[w.mod] then out.mod = w.mod end
+    if RULE_UNITS[w.unit] then out.unit = w.unit end
     return out
 end
 
@@ -343,10 +347,28 @@ end
 
 -- Makes `name` the set in use: for the current spec when that spec has a set
 -- of its own, else for the character.
+local pickScope = nil               -- { old, new }: the character's set was just changed from one to the other
 local function UseSet(name)
     local specID, _, own = SpecState()
-    if specID and own then cast.specSet[specID] = name else cast.set = name end
+    if specID and own then
+        cast.specSet[specID] = name
+    else
+        local old = cast.set
+        cast.set = name
+        -- Every spec without a set of its own now uses the new one. The
+        -- editor says so and offers to keep it to this spec (PickScope).
+        pickScope = (specID and old and old ~= name and sets and sets[old]) and { old = old, new = name } or nil
+    end
 end
+
+-- After the character's set was changed: the spec's name and the new set,
+-- while "this spec only" can still be chosen for it; else nil.
+local function PickScope()
+    local specID, specName, own = SpecState()
+    if not (pickScope and specID and not own and cast.set == pickScope.new and sets and sets[pickScope.old]) then return nil end
+    return specName, pickScope.new
+end
+
 
 -- The set in use, or nil (none picked, deleted, or of an unknown version).
 local function ActiveSet()
@@ -443,6 +465,7 @@ local WHEN_WORD = {
     combat = { [true] = "combat", [false] = "nocombat" },
     pet = { [true] = "pet", [false] = "nopet" },
     mod = { shift = "shift", ctrl = "ctrl", alt = "alt" },
+    unit = { player = "@player", target = "@target", focus = "@focus", targettarget = "@targettarget", pet = "@pet" },
 }
 local WORD_WHEN = {}
 for field, words in pairs(WHEN_WORD) do
@@ -460,7 +483,7 @@ local function ExportSet(name)
         local fields = { Escape(binding.key) .. (marks ~= "" and ("+" .. marks) or "") }
         for _, rule in ipairs(binding.rules) do
             local words = {}
-            for _, field in ipairs({ "reaction", "dead", "combat", "pet", "mod" }) do
+            for _, field in ipairs({ "reaction", "dead", "combat", "pet", "mod", "unit" }) do
                 local word = WHEN_WORD[field][rule.when[field]]
                 if word then words[#words + 1] = word end
             end
@@ -526,16 +549,27 @@ local function HasConditions(when)
     return next(when) ~= nil
 end
 
+-- A rule that fits whatever happens: no condition at all, or nothing but
+-- "on myself" (there is always a player).
+local function Always(when)
+    for field, value in pairs(when) do
+        if not (field == "unit" and value == "player") then return false end
+    end
+    return true
+end
+
 -- "[@mouseover,help,dead]": the unit under the cursor, and the rule's
 -- conditions in a fixed order. "exists" is only spelled out when nothing else
 -- already implies it; macro text is short of room.
 -- With `onTarget` the clause is for the player's target instead (no unit
 -- named, which is what a macro takes as the target): "[help,nodead]", "[]".
+-- A rule that names its own unit (`when.unit`) is about that unit instead:
+-- "[@focus,help]", "[@player]".
 local function Clause(when, onTarget)
     local parts = {}
     if not onTarget then
-        parts[1] = "@mouseover"
-        if not when.reaction and when.dead == nil then parts[#parts + 1] = "exists" end
+        parts[1] = "@" .. (when.unit or "mouseover")
+        if not when.reaction and when.dead == nil and when.unit ~= "player" then parts[#parts + 1] = "exists" end
     end
     if when.reaction then parts[#parts + 1] = when.reaction end
     if when.dead ~= nil then parts[#parts + 1] = when.dead and "dead" or "nodead" end
@@ -674,21 +708,49 @@ local ActionEntry                  -- defined with the legend's reader, below
 --   zoom                a wheel key to be held only while a unit is under the cursor
 --   skipped             rules left out because the spell is not known
 --   problems            what the editor should tell the player
+--   fix                 how to mend the first problem of order, in terms of
+--                       the binding's own rules: { rule = index, before =
+--                       index } or { rule = index, last = true }
 local function CompileBinding(binding)
     local out = { kind = "none", skipped = 0, problems = {} }
-    local live = {}
+    local live, from = {}, {}               -- from[i]: the saved rule live[i] came from
     local unfinished = false
-    for _, rule in ipairs(Expanded(binding.rules)) do
-        if Incomplete(rule.action) then
-            unfinished = true
-        elseif Unavailable(rule.action) then
-            out.skipped = out.skipped + 1
-        else
-            live[#live + 1] = rule
+    for index, saved in ipairs(binding.rules) do
+        for _, rule in ipairs(Expanded({ saved })) do
+            if Incomplete(rule.action) then
+                unfinished = true
+            elseif Unavailable(rule.action) then
+                out.skipped = out.skipped + 1
+            else
+                live[#live + 1] = rule
+                from[#live] = index
+            end
         end
     end
     if unfinished then out.problems[#out.problems + 1] = "A rule has nothing chosen yet." end
     if #live == 0 then return out end
+
+    -- A rule with no condition takes every unit under the cursor, so a later
+    -- rule about that unit can never fire and is left out. A later rule about
+    -- a unit of its own still can, on a key that works anywhere: with nothing
+    -- under the cursor the first one does not fit. (On a unit frame something
+    -- always is under the cursor; that case is caught in the loop below.)
+    if binding.hover then
+        local kept, keptFrom, taker, lost = {}, {}, nil, 0
+        for i, rule in ipairs(live) do
+            if taker and not rule.when.unit then
+                lost = lost + 1
+                out.fix = out.fix or { rule = from[i], before = taker }
+            else
+                kept[#kept + 1], keptFrom[#kept + 1] = rule, from[i]
+                if not taker and not HasConditions(rule.when) then taker = from[i] end
+            end
+        end
+        if lost > 0 then
+            out.problems[#out.problems + 1] = lost .. " rule(s) after an unconditional rule can never fire."
+            live, from = kept, keptFrom
+        end
+    end
 
     if live[1].action.type == "macro" and not HasConditions(live[1].when) then
         if #live > 1 then out.problems[#out.problems + 1] = "Rules after an unconditional macro can never fire." end
@@ -716,6 +778,7 @@ local function CompileBinding(binding)
     -- very same conditions are the usual shape of "this spell, or else that
     -- one" and are left out quietly, below.)
     local function Covers(earlierWhen, when)
+        if earlierWhen.unit ~= when.unit then return false end      -- about different units
         local same = true
         for field, value in pairs(earlierWhen) do
             if when[field] ~= value then return false end
@@ -734,6 +797,7 @@ local function CompileBinding(binding)
             if Covers(live[j].when, rule.when) then
                 out.problems[#out.problems + 1] = ActionEntry(action).name .. " can never fire here: "
                     .. ActionEntry(live[j].action).name .. " above it fits every time it would. Move it up, or give the one above another condition."
+                if from[i] ~= from[j] then out.fix = out.fix or { rule = from[i], before = from[j] } end
                 break
             end
         end
@@ -747,15 +811,17 @@ local function CompileBinding(binding)
                 if #earlier > 0 and #lines > 0 then lines[#lines + 1] = "/stopmacro " .. tconcat(earlier) end
                 castParts, castVerb = {}, "/cast"
             end
-            local onTarget = Clause(rule.when, true)
+            -- A rule with a unit of its own has nothing to add for the target:
+            -- it never was about the unit under the cursor.
+            local onTarget = not rule.when.unit and Clause(rule.when, true)
             if action.type ~= "spell" then
                 castVerb = "/use"
             else
                 castClauses[#castClauses + 1] = clause
-                elseClauses[#elseClauses + 1] = onTarget
+                if onTarget then elseClauses[#elseClauses + 1] = onTarget end
             end
             castParts[#castParts + 1] = clause .. " " .. token
-            elseParts[#elseParts + 1] = onTarget .. " " .. token
+            if onTarget then elseParts[#elseParts + 1] = onTarget .. " " .. token end
         elseif action.type == "spell" then
             OwnLine("/click " .. clause .. " {rank:" .. action.spellID .. "}")
             castClauses[#castClauses + 1] = clause
@@ -775,9 +841,11 @@ local function CompileBinding(binding)
         end
         if not seen[clause] then earlier[#earlier + 1] = clause end
         seen[clause] = true
-        if not HasConditions(rule.when) then
+        if Always(rule.when) and (rule.when.unit or not binding.hover) then
             if i < #live then
-                out.problems[#out.problems + 1] = (#live - i) .. " rule(s) after an unconditional rule can never fire."
+                out.problems[#out.problems + 1] = (#live - i) .. " rule(s) after "
+                    .. (rule.when.unit and "a rule that always casts on yourself" or "an unconditional rule") .. " can never fire."
+                out.fix = out.fix or { rule = from[i], last = true }
             end
             break
         end
@@ -795,7 +863,7 @@ local function CompileBinding(binding)
         local all = {}
         for i, line in ipairs(lines) do all[i] = line end
         local when = tconcat(castClauses)
-        if onTarget then
+        if onTarget and #elseParts > 0 then
             all[1] = all[1] .. "; " .. tconcat(elseParts, "; ")
             when = when .. tconcat(elseClauses)
         end
@@ -912,7 +980,8 @@ end
 -- cursor.
 local function Fits(when, side, mod, now)
     if when.reaction and when.reaction ~= (side == "ally" and "help" or "harm") then return false end
-    local dead = now.hoverSide == side and now.hoverDead or false
+    -- A rule about a unit of its own: that unit is taken to be alive.
+    local dead = not when.unit and now.hoverSide == side and now.hoverDead or false
     if when.dead ~= nil and when.dead ~= dead then return false end
     if when.combat ~= nil and now.combat ~= nil and when.combat ~= now.combat then return false end
     if when.form and now.form and when.form ~= now.form then return false end
@@ -948,7 +1017,11 @@ local function CollectOwnLayers()
     local function Put(binding, mods, key, mod)
         for _, side in ipairs({ "ally", "enemy" }) do
             local rule = RuleFor(binding, side, mod, now)
-            if rule then PutEntry(layers, mods, key, side, ActionEntry(rule.action)) end
+            if rule then
+                local entry = ActionEntry(rule.action)
+                entry.unit = rule.when.unit         -- the legend asks about range to this unit
+                PutEntry(layers, mods, key, side, entry)
+            end
         end
     end
     for _, binding in ipairs(set.bindings) do
@@ -1166,6 +1239,7 @@ local CONDITION_VALUES = {
     pet = { false, "pet", "nopet" },
     mod = { false, "shift", "ctrl", "alt" },
     form = { false, 0, 1, 2, 3, 4, 5, 6 },
+    unit = { false, "player", "target", "focus", "targettarget", "pet" },
 }
 local CONDITION_STORED = {          -- editor value -> what is saved
     alive = false, dead = true, ["in"] = true, out = false, pet = true, nopet = false,
@@ -1200,7 +1274,7 @@ function Edit.AddBinding(keyStr)
     if not set then return false, "Make or pick a set first." end
     if not key then return false, "That is not a key." end
     if FindBinding(set, key) then return false, KeyName(key) .. " is already in this set." end
-    set.bindings[#set.bindings + 1] = { key = key, rules = { { when = { reaction = "help" }, action = { type = "spell" } } } }
+    set.bindings[#set.bindings + 1] = { key = key, rules = { { when = { reaction = "help" }, action = { type = "spell" }, fresh = true } } }
     CastChanged()
     return true, #set.bindings
 end
@@ -1243,12 +1317,59 @@ function Edit.MoveBinding(bindingIndex, delta)
     return true
 end
 
+-- The keys in the order of a mouse and then the keyboard: left, right,
+-- middle, the extra buttons, the wheel, then keys by name; each one plain
+-- first, then with Shift, Ctrl, Alt.
+local MOD_RANK = { [""] = 0, ["SHIFT-"] = 1, ["CTRL-"] = 2, ["ALT-"] = 3 }
+local function KeyRank(keyStr)
+    local mods, key = ParseKey(keyStr)
+    local n = tonumber(key:match("^BUTTON(%d+)$"))
+    return n or (key == "MOUSEWHEELUP" and 100) or (key == "MOUSEWHEELDOWN" and 101) or 200, key, MOD_RANK[mods] or 4, mods
+end
+
+function Edit.SortKeys()
+    local set = ActiveSet()
+    if not set or #set.bindings < 2 then return false end
+    local was = {}
+    for i, binding in ipairs(set.bindings) do was[i] = binding end
+    table.sort(set.bindings, function(a, b)
+        local a1, a2, a3, a4 = KeyRank(a.key)
+        local b1, b2, b3, b4 = KeyRank(b.key)
+        if a1 ~= b1 then return a1 < b1 end
+        if a2 ~= b2 then return a2 < b2 end
+        if a3 ~= b3 then return a3 < b3 end
+        return a4 < b4
+    end)
+    local changed = false
+    for i, binding in ipairs(set.bindings) do changed = changed or was[i] ~= binding end
+    if not changed then return false end
+    CastChanged()
+    return true
+end
+
 function Edit.RemoveBinding(bindingIndex)
     local set, binding = Target(bindingIndex)
     if not binding then return false, "No such key." end
     table.remove(set.bindings, bindingIndex)
     CastChanged()
     return true
+end
+
+-- Several keys taken out of the set in one go (one Undo step). Returns how many.
+function Edit.RemoveKeys(keyList)
+    local set = ActiveSet()
+    if not (set and type(keyList) == "table") then return false end
+    local gone, count = {}, 0
+    for _, key in ipairs(keyList) do gone[key] = true end
+    for i = #set.bindings, 1, -1 do
+        if gone[set.bindings[i].key] then
+            table.remove(set.bindings, i)
+            count = count + 1
+        end
+    end
+    if count == 0 then return false end
+    CastChanged()
+    return count
 end
 
 -- Something done just before a spell of the key is cast: "stop" (the cast in
@@ -1265,16 +1386,60 @@ function Edit.SetPre(bindingIndex, what, on)
     return true
 end
 
--- A new rule starts as the side the key does not cover yet.
-function Edit.AddRule(bindingIndex)
+-- The kinds of rule the editor offers by name. Each is put where it can
+-- fire: a resurrection first, "else on myself" last, the others in front of
+-- the first rule that always fits.
+local RECIPES = {
+    ally = { when = { reaction = "help" } },
+    enemy = { when = { reaction = "harm" } },
+    rez = { when = { reaction = "help", dead = true }, action = "rez", first = true },
+    self = { when = { unit = "player" }, last = true },
+    target = { when = { unit = "target" } },
+    focus = { when = { unit = "focus" } },
+    targettarget = { when = { unit = "targettarget" } },
+    pet = { when = { unit = "pet" } },
+    blank = { when = {}, last = true },
+}
+local RECIPE_ORDER = { "ally", "enemy", "rez", "self", "target", "focus", "targettarget", "pet", "blank" }
+
+-- A new rule: one of RECIPES, or with none the side the key does not cover
+-- yet. Returns true and where the rule now is.
+function Edit.AddRule(bindingIndex, recipe)
     local _, binding = Target(bindingIndex)
     if not binding then return false, "No such key." end
-    local has = {}
-    for _, rule in ipairs(binding.rules) do has[rule.when.reaction or "any"] = true end
-    local reaction = (not has.help and "help") or (not has.harm and "harm") or nil
-    binding.rules[#binding.rules + 1] = { when = { reaction = reaction }, action = { type = "spell" } }
+    local made = recipe and RECIPES[recipe]
+    if recipe and not made then return false end
+    if not made then
+        local has = {}
+        for _, rule in ipairs(binding.rules) do has[rule.when.reaction or "any"] = true end
+        local reaction = (not has.help and "help") or (not has.harm and "harm") or nil
+        binding.rules[#binding.rules + 1] = { when = { reaction = reaction }, action = { type = "spell" } }
+        CastChanged()
+        return true, #binding.rules
+    end
+    local at = #binding.rules + 1
+    if made.first then
+        at = 1
+    elseif not made.last then
+        for i, rule in ipairs(binding.rules) do
+            if Always(rule.when) then at = i; break end
+        end
+    end
+    -- "Else on myself" is nearly always the spell the key already casts on an
+    -- ally, so it starts as that one (third return: nothing left to choose).
+    local action, filled = { type = made.action or "spell" }, made.action ~= nil
+    if recipe == "self" then
+        for _, rule in ipairs(binding.rules) do
+            local a, w = rule.action, rule.when
+            if a.type == "spell" and (a.name or a.spellID) and w.reaction ~= "harm" and w.dead ~= true and not w.unit then
+                action, filled = CopyTable(a), true
+                break
+            end
+        end
+    end
+    table.insert(binding.rules, at, Normalise({ when = CopyTable(made.when), action = action }))
     CastChanged()
-    return true, #binding.rules
+    return true, at, filled
 end
 
 function Edit.RemoveRule(bindingIndex, ruleIndex)
@@ -1295,6 +1460,29 @@ function Edit.MoveRule(bindingIndex, ruleIndex, delta)
     return true
 end
 
+-- Mends the first problem of order the compiler found (see `fix` there): the
+-- rule that can never fire goes above the one in its way, or the rule that
+-- always fits goes last.
+function Edit.FixOrder(bindingIndex)
+    local _, binding = Target(bindingIndex)
+    if not binding then return false end
+    local moved = false
+    for _ = 1, 12 do                    -- one move may uncover the next problem
+        local fix = CompileBinding(binding).fix
+        if not (fix and binding.rules[fix.rule]) then break end
+        local rule = table.remove(binding.rules, fix.rule)
+        if fix.last then
+            binding.rules[#binding.rules + 1] = rule
+        else
+            table.insert(binding.rules, fix.before, rule)   -- `before` is above `rule`, so it has not moved
+        end
+        moved = true
+    end
+    if not moved then return false end
+    CastChanged()
+    return true
+end
+
 -- A condition set straight to one of its values (see CONDITION_VALUES).
 function Edit.SetCondition(bindingIndex, ruleIndex, field, value)
     local _, _, rule = Target(bindingIndex, ruleIndex)
@@ -1308,6 +1496,7 @@ function Edit.SetCondition(bindingIndex, ruleIndex, field, value)
     if rule.action.type == "text" and value ~= false then
         return false, "Macro text takes no conditions here: write them in the text, like [@mouseover,help]."
     end
+    rule.fresh = nil                    -- the player has said who it is for
     if value == false then
         rule.when[field] = nil
     elseif CONDITION_STORED[value] ~= nil then
@@ -1318,6 +1507,24 @@ function Edit.SetCondition(bindingIndex, ruleIndex, field, value)
     Normalise(rule)
     CastChanged()
     return true
+end
+
+-- The first rule of a key just added starts as "ally" (`fresh`). The spell
+-- then picked for it says who it is for: a harmful one goes on enemies, one
+-- that is both on anyone, a resurrection on dead allies. Once only: after
+-- that the conditions are the player's.
+local QuickSlots                -- defined with Quickbind, below
+local function FreshSide(rule)
+    if not rule.fresh then return end
+    rule.fresh = nil
+    local slots = QuickSlots(rule.action)
+    if #slots == 2 then
+        rule.when = {}
+    elseif slots[1] == "enemy" then
+        rule.when = { reaction = "harm" }
+    elseif slots[1] == "dead" then
+        rule.when = { reaction = "help", dead = true }
+    end
 end
 
 -- What a rule does, set to a kind (nothing chosen yet for the kinds that
@@ -1338,6 +1545,7 @@ function Edit.SetAction(bindingIndex, ruleIndex, action)
     local clean = rule and CleanAction(action)
     if not clean then return false end
     rule.action = clean
+    FreshSide(rule)
     Normalise(rule)
     CastChanged()
     return true
@@ -1346,51 +1554,61 @@ end
 -- A spell, item or macro dropped from the spellbook, bags or macro window:
 -- what GetCursorInfo() returned. A dropped spell keeps its id, so that exact
 -- rank can be pinned.
-function Edit.SetActionFromCursor(bindingIndex, ruleIndex, kind, a, b, c)
-    local _, _, rule = Target(bindingIndex, ruleIndex)
-    if not rule then return false end
+local function CursorAction(kind, a, b, c)
     if kind == "spell" then
         local id = WholeNumber(c, 1, 2 ^ 31) or WholeNumber(a, 1, 2 ^ 31)
-        if not id then return false end
-        rule.action = { type = "spell", spellID = id, name = SpellName(id) }
+        if not id then return nil end
+        return { type = "spell", spellID = id, name = SpellName(id) }
     elseif kind == "item" then
         local id = WholeNumber(a, 1, 2 ^ 31)
-        if not id then return false end
+        if not id then return nil end
         local name
         if C_Item and C_Item.GetItemNameByID then
             local ok, n = pcall(C_Item.GetItemNameByID, id)
             name = ok and Text(n) or nil
         end
-        rule.action = { type = "item", itemID = id, name = name }
+        return { type = "item", itemID = id, name = name }
     elseif kind == "macro" then
         local name = MacroInfo(a)
-        if not Text(name) then return false end
-        rule.action = { type = "macro", name = name }
-    else
-        return false
+        if not Text(name) then return nil end
+        return { type = "macro", name = name }
     end
+    return nil
+end
+
+function Edit.SetActionFromCursor(bindingIndex, ruleIndex, kind, a, b, c)
+    local _, _, rule = Target(bindingIndex, ruleIndex)
+    local action = rule and CursorAction(kind, a, b, c)
+    if not action then return false end
+    rule.action = action
+    FreshSide(rule)
     CastChanged()
     return true
 end
 
 -------------------------------------------------------------------------------
---  The simple view of a key, for the guided setup: three slots.
+--  The simple view of a key, for the guided setup: four slots.
 --    ally   what it does on a living ally
 --    dead   what it does on a dead ally (nothing: same as a living one)
 --    enemy  what it does on an enemy
+--    self   what it casts on the player when none of those fits
 --  A slot is the rule, or chain of fallback rules, with exactly that
 --  condition. Rules with other conditions (combat, form, pet, modifier) are
 --  not part of any slot and are left as they are.
 -------------------------------------------------------------------------------
 local SLOT_WHEN = {
     ally = { reaction = "help" }, dead = { reaction = "help", dead = true }, enemy = { reaction = "harm" },
+    self = { unit = "player" },
 }
 
-local function Plain(when)             -- no combat, form, pet or modifier condition
-    return when.combat == nil and when.form == nil and when.pet == nil and when.mod == nil
+local function Plain(when)             -- no combat, form, pet or modifier condition, no unit of its own
+    return when.combat == nil and when.form == nil and when.pet == nil and when.mod == nil and when.unit == nil
 end
 
 local function InSlot(when, slot)
+    if slot == "self" then                              -- on the player, whatever else
+        return when.unit == "player" and Always(when)
+    end
     if slot == "dead" then                              -- a dead-ally rule, in or out of combat
         return when.reaction == "help" and when.dead == true and when.form == nil
             and when.pet == nil and when.mod == nil
@@ -1410,7 +1628,7 @@ local function SlotAction(keyStr, slot)
     local fallback
     for _, rule in ipairs(set.bindings[index].rules) do
         local when = rule.when
-        local anyone = slot ~= "dead" and when.reaction == nil and when.dead == nil and Plain(when)
+        local anyone = slot ~= "dead" and slot ~= "self" and when.reaction == nil and when.dead == nil and Plain(when)
         if (anyone or InSlot(when, slot)) and not Incomplete(rule.action) then
             if not Unavailable(rule.action) then return rule.action end
             fallback = fallback or rule.action
@@ -1442,9 +1660,14 @@ function Edit.SetSlot(keyStr, slot, action)
         end
     end
     if clean then
-        -- Dead-ally rules go first, then the ally rule, the enemy rule last.
+        -- Dead-ally rules go first, then the ally rule, then the enemy rule;
+        -- the rule on the player is the last of all, since it always fits.
         local at = #rules + 1
-        if slot ~= "enemy" then
+        if slot == "enemy" then
+            for i, rule in ipairs(rules) do
+                if InSlot(rule.when, "self") then at = i; break end
+            end
+        elseif slot ~= "self" then
             at = 1
             for i, rule in ipairs(rules) do
                 local w = rule.when
@@ -1470,7 +1693,7 @@ end
 --  spell: a resurrection on dead allies, a harmful spell on enemies, a spell
 --  that is both on both, anything else on allies.
 -------------------------------------------------------------------------------
-local function QuickSlots(action)
+QuickSlots = function(action)
     if action.type == "rez" then return { "dead" } end
     if action.type ~= "spell" then return { "ally" } end
     for _, kind in ipairs({ "rez", "battlerez" }) do
@@ -1489,7 +1712,7 @@ local function QuickSlots(action)
     return { harmful and "enemy" or "ally" }
 end
 
-local SLOT_WORDS = { ally = "allies", dead = "dead allies", enemy = "enemies" }
+local SLOT_WORDS = { ally = "allies", dead = "dead allies", enemy = "enemies", self = "yourself" }
 
 -- Returns true and where it went ("allies and enemies"), or false and why not.
 -- With no set in use, one is made.
@@ -1550,6 +1773,27 @@ function Edit.RemoveAction(action)
     return removed
 end
 
+-- Another spell, item or macro in the place of `action`, on every key it is
+-- on. Returns how many rules were changed.
+function Edit.ReplaceAction(action, with)
+    local set = ActiveSet()
+    local clean = type(with) == "table" and CleanAction(with)
+    if not (set and type(action) == "table" and clean) then return false end
+    local count = 0
+    for _, binding in ipairs(set.bindings) do
+        for _, rule in ipairs(binding.rules) do
+            if SameActionOf(rule.action, action) then
+                rule.action = CopyTable(clean)
+                Normalise(rule)
+                count = count + 1
+            end
+        end
+    end
+    if count == 0 then return false end
+    CastChanged()
+    return count
+end
+
 -- True for a key that "hover casting" as a whole is about: a keyboard key,
 -- the wheel or a mouse button past the third. Left, right and middle click
 -- have a use in the world that a player would miss. Second: it is the wheel,
@@ -1600,6 +1844,28 @@ function Edit.SetHoverKeys(on, orTarget)
     return changed
 end
 
+-- Every key that works anywhere set the way one of them is: off, on, or on
+-- and else the target. The wheel never goes on to the target.
+function Edit.SetHoverAll(on, orTarget)
+    local set = ActiveSet()
+    if not set then return false end
+    local hover, target = on and true or nil, on and orTarget and true or nil
+    local changed = false
+    for _, binding in ipairs(set.bindings) do
+        if binding.hover then
+            local _, wheel = HoverKey(binding.key)
+            local want = not wheel and target or nil
+            if binding.hover ~= hover or binding.orTarget ~= want then
+                binding.hover, binding.orTarget = hover, want
+                changed = true
+            end
+        end
+    end
+    if not changed then return false end
+    CastChanged()
+    return true
+end
+
 -------------------------------------------------------------------------------
 --  A set copied from another click-cast addon, or from the game's own Click
 --  Casting: what the legend reads from them (Sources.lua), turned into rules.
@@ -1630,7 +1896,124 @@ end
 
 -- Returns the new set's name, how many keys it has and how many bindings
 -- were left out; or false and why not.
+-- Clique's own list says more than the legend's layers carry: a binding in
+-- its "hovercast" set works on any unit under the cursor, one in "ooc" only
+-- out of combat, and a macro binding holds its text. Read here, so that a
+-- copy keeps all three. (Clique.db.profile.bindings: { key, type, spell,
+-- macrotext, sets = { default, ooc, friend, enemy, hovercast, specN } }.)
+-- Bindings limited to another talent spec are left where they are.
+local function CopyFromClique()
+    local C = Clique
+    if type(C) ~= "table" then return nil end
+    local list = type(C.db) == "table" and type(C.db.profile) == "table" and C.db.profile.bindings
+    if type(list) ~= "table" then list = C.bindings end
+    if type(list) ~= "table" then return nil end
+    local specIndex
+    local S = C_SpecializationInfo
+    if S and S.GetSpecialization then
+        local ok, index = pcall(S.GetSpecialization)
+        if ok and type(index) == "number" and index > 0 then specIndex = index end
+    end
+    local byKey, order, left = {}, {}, 0
+    for _, b in pairs(list) do
+        if type(b) == "table" and type(b.key) == "string" and type(b.sets) == "table" and next(b.sets) ~= nil then
+            local specOnly, specMatch = false, false
+            for set in pairs(b.sets) do
+                local n = type(set) == "string" and set:match("^spec(%d+)$")
+                if n then
+                    specOnly = true
+                    specMatch = specMatch or tonumber(n) == specIndex
+                end
+            end
+            local key = CanonicalKey(b.key)
+            if key and (not specOnly or specMatch or not specIndex) then
+                local action
+                if b.type == "target" or b.type == "menu" then
+                    action = { type = b.type }
+                elseif b.type == "macro" then
+                    local text = type(b.macrotext) == "string" and #b.macrotext <= MACRO_LIMIT and Text(b.macrotext, MACRO_LIMIT)
+                    if text then
+                        action = { type = "text", text = text }
+                    elseif Text(b.macro) and MacroInfo(b.macro) then
+                        action = { type = "macro", name = b.macro }
+                    end
+                elseif b.spell ~= nil then
+                    local id = SpellIDFor(b.spell)
+                    local name = id and SpellName(id) or (type(b.spell) == "string" and b.spell) or nil
+                    action = name and CleanAction({ type = "spell", name = name }) or nil
+                end
+                if not action then
+                    left = left + 1
+                else
+                    local when = {}
+                    if action.type == "spell" then
+                        if b.sets.friend and not b.sets.enemy then
+                            when.reaction = "help"
+                        elseif b.sets.enemy and not b.sets.friend then
+                            when.reaction = "harm"
+                        else
+                            local slots = QuickSlots(action)
+                            if #slots == 1 then
+                                when.reaction = slots[1] == "enemy" and "harm" or "help"
+                                if slots[1] == "dead" then when.dead = true end
+                            end
+                        end
+                        if b.sets.ooc and not b.sets.default then when.combat = false end
+                    end
+                    local binding = byKey[key]
+                    if not binding then
+                        binding = { key = key, rules = {} }
+                        byKey[key] = binding
+                        order[#order + 1] = key
+                    end
+                    if b.sets.hovercast and HoverAllowed(key) then binding.hover = true end
+                    binding.rules[#binding.rules + 1] = Normalise({ when = when, action = action })
+                end
+            end
+        end
+    end
+    if #order == 0 then return nil end
+    -- Clique keeps no order. Keys as a mouse and then a keyboard have them; in
+    -- a key, the rule that asks for most first, so that none hides another.
+    table.sort(order, function(a, b)
+        local a1, a2, a3, a4 = KeyRank(a)
+        local b1, b2, b3, b4 = KeyRank(b)
+        if a1 ~= b1 then return a1 < b1 end
+        if a2 ~= b2 then return a2 < b2 end
+        if a3 ~= b3 then return a3 < b3 end
+        return a4 < b4
+    end)
+    local function Rank(rule)
+        local w = rule.when
+        if rule.action.type == "text" then return 9 end
+        local n = 0
+        for _ in pairs(w) do n = n + 1 end
+        return 4 - n + (w.reaction == "harm" and 0.5 or 0)
+    end
+    local bindings = {}
+    for i, key in ipairs(order) do
+        local binding = byKey[key]
+        for n, rule in ipairs(binding.rules) do rule.at = n end
+        table.sort(binding.rules, function(a, b)
+            local ra, rb = Rank(a), Rank(b)
+            if ra ~= rb then return ra < rb end
+            local na, nb = tostring(a.action.name or a.action.type), tostring(b.action.name or b.action.type)
+            if na ~= nb then return na < nb end
+            return a.at < b.at
+        end)
+        for _, rule in ipairs(binding.rules) do rule.at = nil end
+        bindings[i] = binding
+    end
+    local name = AddSet("From Clique", { bindings = bindings })
+    if not name then return nil end
+    return name, #sets[name].bindings, left
+end
+
 local function CopyFromSource(id)
+    if id == "clique" then
+        local name, count, left = CopyFromClique()
+        if name then return name, count, left end
+    end
     for _, source in ipairs(OtherSources()) do
         if source.id == id then
             local bindings, left = {}, 0
@@ -1660,30 +2043,55 @@ local function CopyFromSource(id)
 end
 
 -------------------------------------------------------------------------------
---  Undo: the set as it was before the last change made from a settings
---  screen. One step back, and gone at the next reload.
+--  Undo: the set as it was before each of the last few changes made from a
+--  settings screen. Gone at the next reload. One step is one thing the
+--  player did: an edit that calls other edits (Quickbind sets slots) counts
+--  once.
 -------------------------------------------------------------------------------
-local undo = nil                -- { name = set name, set = a copy of it }
+local UNDO_STEPS = 8
+local undo = {}                 -- the newest last: { name = set name, set = a copy of it }
+local depth = 0
 
 for name, fn in pairs(Edit) do
     Edit[name] = function(...)
         local set, setName = ActiveSet()
-        local before = set and CopyTable(set)
-        local a, b, c = fn(...)
+        local before = depth == 0 and set and CopyTable(set)
+        depth = depth + 1
+        local ok, a, b, c = pcall(fn, ...)
+        depth = depth - 1
+        if not ok then error(a, 0) end
+        if depth == 0 then pickScope = nil end          -- the set is being worked on: no longer "just picked"
         local _, nowName = ActiveSet()
-        if a and before and nowName == setName then undo = { name = setName, set = before } end
+        if a and before and nowName == setName then
+            undo[#undo + 1] = { name = setName, set = before }
+            if #undo > UNDO_STEPS then table.remove(undo, 1) end
+        end
         return a, b, c
     end
 end
 
 local function CanUndo()
-    return undo ~= nil and sets ~= nil and sets[undo.name] ~= nil
+    -- A step for a set that is gone (deleted, renamed) cannot be taken.
+    while #undo > 0 and not (sets and sets[undo[#undo].name]) do undo[#undo] = nil end
+    return #undo > 0
 end
 
 local function Undo()
     if not CanUndo() then return false end
-    sets[undo.name] = undo.set
-    undo = nil
+    local step = table.remove(undo)
+    sets[step.name] = step.set
+    CastChanged()
+    return true
+end
+
+-- Keeps the set just picked to the current spec: the other specs go back to
+-- the set they had.
+local function ScopePick()
+    if not PickScope() then return false end
+    local specID = SpecState()
+    cast.specSet[specID] = pickScope.new
+    cast.set = pickScope.old
+    pickScope = nil
     CastChanged()
     return true
 end
@@ -1767,6 +2175,10 @@ ns.ClearSideKeys    = ClearSideKeys
 ns.CastConflicts    = Conflicts
 ns.CastCanUndo      = CanUndo
 ns.CastEdit         = Edit
+ns.CursorAction     = CursorAction
+ns.CastPickScope    = PickScope
+ns.CastScopePick    = ScopePick
+ns.RECIPE_ORDER     = RECIPE_ORDER
 ns.CastUndo         = Undo
 ns.CastKeyName      = KeyName
 ns.CastSettings     = CastSettings

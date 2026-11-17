@@ -10,8 +10,8 @@ local ipairs, type, tostring, tonumber, pcall = ipairs, type, tostring, tonumber
 local tsort = table.sort
 local max, min = math.max, math.min
 
-local ACCENT, ApplyFont, Clamp, Safe =
-    ns.ACCENT, ns.ApplyFont, ns.Clamp, ns.Safe
+local ACCENT, Clamp, Safe =
+    ns.ACCENT, ns.Clamp, ns.Safe
 local NewText, SpellName, SpellTexture, ValidIcon =
     ns.NewText, ns.SpellName, ns.SpellTexture, ns.ValidIcon
 

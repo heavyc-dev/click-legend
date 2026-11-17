@@ -106,8 +106,9 @@ local function Help()
     print("  /clg labelsize <7-14> - label size (now " .. db.labelSize .. ")")
     print("  /clg bg - toggle the background")
     print("  /clg bgcolor | allycolor | enemycolor <RRGGBB> - e.g. /clg bgcolor 101418")
+    print("  /clg rangecolor | manacolor | cooldowncolor <RRGGBB> - the tint of a spell you cannot cast now")
     print("  /clg bgalpha <0-1> | pad <0-20> - background opacity and padding")
-    print("  /clg preset default | compact | sidebar | full - apply a layout preset")
+    print("  /clg preset default | compact | sidebar | full | minimal - apply a layout preset")
     print("  /clg export - settings as text to copy; /clg import <text> - use someone's settings")
     print("  /clg list - print every binding to chat")
     print("  /clg reset - default position and settings")
@@ -126,7 +127,8 @@ local CHOICE_KEYS = {
     layers = "layers", anchor = "anchor", source = "source", side = "anchorSide", off = "offStyle", mousepic = "mousePic",
     visible = "visibility", labelstyle = "labelStyle", layout = "layout", rows = "rows", sort = "sort",
 }
-local COLORS = { bgcolor = "bg", allycolor = "ally", enemycolor = "enemy" }
+local COLORS = { bgcolor = "bg", allycolor = "ally", enemycolor = "enemy",
+                 rangecolor = "far", manacolor = "mana", cooldowncolor = "cool" }
 
 -- Every setter below returns true when a setting changed, so the legend is
 -- redrawn once at the end of HandleSlash.

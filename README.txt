@@ -26,7 +26,7 @@ The legend
     unit frame
   - The row that does not apply to the unit under your cursor dims, or
     goes away if you prefer
-  - A cooldown sweeps over its icon; no mana turns it blue, out of range red
+  - A cooldown sweeps over its icon; no mana turns it blue, out of range orange
   - An icon flashes when its spell is cast; a spell bound to one exact rank
     shows the rank
   - Every modifier layer at once, if you prefer that to holding the key
@@ -42,15 +42,16 @@ The legend
 Click casting of its own (optional, off until you switch it on)
   ClickLegend can also do the click casting. Open /clg, Bindings tab.
   Press Guided setup, pick the ready-made set for your class and press
-  Next: the steps ask whether your keys should cast on units in the world
-  (hover casting), which buttons you use and what each should do. In a
-  hurry: "Skip the setup: use it and turn on" takes the set as it is.
+  Next: the steps ask which buttons you use, what each should do, and
+  whether your keys should also cast on units in the world (hover
+  casting). The last step switches click casting on. In a hurry: "Skip
+  the setup: use it and turn on" takes the set as it is.
   Everything below is for changing it afterwards.
   - The tab has two halves: your keys on the left, and on the right the
     rules of the key you click. The two icons beside a key are what it
     casts on an ally and on an enemy.
-  - Undo takes back the last change. Clicking an icon on the unlocked
-    legend opens that key.
+  - Undo takes back the last change, up to eight of them. Clicking an
+    icon on the unlocked legend opens that key.
   - Make a set, press "Add a key", then press the key or mouse button to
     bind, holding Shift, Ctrl or Alt if you want them. Mouse buttons, the
     mouse wheel and keyboard keys all work; keys and the wheel act only
@@ -71,6 +72,15 @@ Click casting of its own (optional, off until you switch it on)
     Example on one key: dead ally = resurrection, ally = heal, enemy = damage.
   - Conditions: ally or enemy, alive or dead, in or out of combat, your
     stance or form, with or without a pet, an extra modifier.
+  - A rule can cast on someone other than the unit under the cursor:
+    yourself, your target, your focus, your target's target or your pet
+    ("+ condition", "Cast on someone else").
+  - "Add a rule" asks what the key should also do (heal an ally, damage an
+    enemy, resurrect, else cast on myself...) and puts the rule where it
+    can fire. A line above the rules reads the key back in plain words.
+    A rule that can never fire comes with a Fix button.
+  - Drag a spell from your spellbook onto a key, or onto an icon of the
+    unlocked legend, to put it there.
   - A rule can cast a spell (your highest rank, or one exact rank), use an
     item or trinket, run one of your macros, target, focus, assist, or open
     the unit menu. Spells, macros and items are picked from lists.
@@ -89,7 +99,9 @@ Click casting of its own (optional, off until you switch it on)
   - Guided setup, hover casting: unit frames only, any unit under the
     cursor, or under the cursor and else your target. It covers keyboard
     keys, the wheel and extra mouse buttons (the fourth and up); left,
-    right and middle click stay on unit frames.
+    right and middle click stay on unit frames. The step comes after your
+    keys, and only when you have a key it is about. In the editor, a
+    key's hover button can set every hover casting key like that one.
   - A wheel key that works on any unit under the cursor is ClickLegend's
     only while a unit is there. The rest of the time the wheel zooms the
     camera as usual. Not with "else my target": there it casts.
@@ -97,21 +109,29 @@ Click casting of its own (optional, off until you switch it on)
     (left, right, middle, wheel up and down, your extra mouse buttons:
     click them to add them, and keyboard keys: press them to add them),
     each plain or with Shift, Ctrl or Alt. One page then lists those keys
-    with what each does on an ally, a dead ally and an enemy; click a box
-    to pick. A last page has the usual options.
+    with what each does on an ally, a dead ally and an enemy, and what it
+    casts on you when none of those fits; click a box to pick. A button
+    you switch off is taken out of the set.
   - New... also offers "Copy from" for each click-cast addon ClickLegend
     can read right now (Clique, VuhDo, HealBot, EllesmereUI HoverCast, the
     game's own Click Casting): its bindings become a set of your own. An
-    addon's own actions are left out. Switch the other click casting off
-    before you turn ClickLegend's on.
+    addon's own actions are left out. From Clique, hovercast bindings
+    become hover casting keys, out-of-combat ones keep that condition, and
+    macro text comes along. Switch the other click casting off before you
+    turn ClickLegend's on.
   - New... offers a starter set for each class to begin from. The most used
     spells are on the plain clicks, then Shift, Ctrl and Alt. Where a plain
     click has an ally spell, it still targets or opens the menu on everyone
     else, and Alt + Left and Alt + Right are Target and Menu.
-  - More... renames or copies a set, exports it as text to share, and
-    imports one. Hover a key in the list to read all of its rules.
-  - "On press": mouse clicks on unit frames cast as the button goes down
-    instead of when it is let go.
+  - More... renames or copies a set, exports it as text to share, imports
+    one, and sorts the keys. Hover a key in the list to read all of its
+    rules. It also holds which unit frames click casting works on, and
+    "Cast on press": mouse clicks on unit frames cast as the button goes
+    down instead of when it is let go.
+  - Picking another set changes it for every spec; the line that says so
+    has a button to keep it to the spec you are in.
+  - Quickbind: the > on a spell's row puts another spell in its place on
+    every key it is on; the x takes it off them.
   - The legend shows what each key would do right now, and dims a spell
     that is on cooldown, that you lack the mana for, or that cannot reach
     the unit under the cursor.
@@ -178,6 +198,8 @@ Commands
   /clg missing                  toggle greying of bindings that cannot fire
   /clg usable                   toggle marking spells you cannot cast now
   /clg allycolor <RRGGBB>       ally color (also /clg enemycolor)
+  /clg rangecolor <RRGGBB>      tint of a spell out of range (also
+                                /clg manacolor, /clg cooldowncolor)
   /clg profile                  separate settings for this character, or shared
   /clg preset default | compact | sidebar | full | minimal
   /clg layout horizontal | vertical | mouse

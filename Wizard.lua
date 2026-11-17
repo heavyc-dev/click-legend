@@ -1,25 +1,27 @@
 -------------------------------------------------------------------------------
 --  ClickLegend - Wizard.lua
---  Guided setup: another way into the Bindings tab. Six steps, seven with a
---  mouse that has a block of side buttons. Next is the way through and is
---  drawn as such; the short way out of the first page is the lesser button.
+--  Guided setup: another way into the Bindings tab. Four or five steps (see
+--  Pages), one more with a mouse that has a block of side buttons. Next is
+--  the way through and is drawn as such; the short way out of the first
+--  page is the lesser button.
 --    1. Where to start: a starter set, the set in use, or nothing; and
 --       which mouse you have, for the small mouse the legend draws above
 --       each spell. "Skip the setup" takes the set as it is and finishes.
 --    +  Your side buttons (only with the twelve-button mouse): press each
 --       one, so that the legend knows which key it sends.
---    2. Hover casting: unit frames only, any unit under the cursor, or that
---       and else the target. One of three, each with what it means. It is
---       about keyboard keys, the wheel and mouse buttons past the third,
---       and is kept for keys added on the later pages (`hoverPick`).
---    3. Your buttons: every mouse button and the wheel, each with Plain,
+--    2. Your buttons: every mouse button and the wheel, each with Plain,
 --       Shift, Ctrl and Alt switches. Extra mouse buttons are added by
---       clicking them, keyboard keys by pressing them.
---    4. What they do: one line per chosen key, with what it does on an ally,
---       on a dead ally and on an enemy side by side.
---    5. Options: a set for this spec, casting as the button goes down, the
---       legend as one large picture of the mouse, bindings in unit tooltips.
---    6. Done: a summary and the on/off switch.
+--       clicking them, keyboard keys by pressing them. A button of the set
+--       that is switched off here is taken out of the set on the way on.
+--    3. What they do: one line per chosen key, with what it does on an ally,
+--       on a dead ally and on an enemy, and what it casts on the player
+--       when none of those fits, side by side.
+--    4. Hover casting, only when the set has a key it is about (a keyboard
+--       key, the wheel, a mouse button past the third): unit frames only,
+--       any unit under the cursor, or that and else the target. One of
+--       three, each with what it means (`hoverPick`).
+--    5. Done: click casting is switched on, with a summary of what changed
+--       and the switch to turn it off again.
 --  The full editor stays there for everything else.
 --
 --  Screen only; every change goes through Cast.lua.
@@ -40,8 +42,7 @@ local SelectSet, SetCastEnabled, ShowMenu, SlotAction =
     ns.SelectSet, ns.SetCastEnabled, ns.ShowMenu, ns.SlotAction
 local CloseMenu, LongKey, ParseKey, KnownButtons, AddKnownButton =
     ns.CloseMenu, ns.LongKey, ns.ParseKey, ns.KnownButtons, ns.AddKnownButton
-local KeyboardKeys, SetCastDown, SetSpecOnly, SpecState =
-    ns.KeyboardKeys, ns.SetCastDown, ns.SetSpecOnly, ns.SpecState
+local KeyboardKeys = ns.KeyboardKeys
 local ClearSideKeys, SetSettings, SetSideKey, SideKeys =
     ns.ClearSideKeys, ns.SetSettings, ns.SetSideKey, ns.SideKeys
 local MOUSE_LAYOUTS, MOUSE_ORDER = ns.MOUSE_LAYOUTS, ns.MOUSE_ORDER
@@ -65,16 +66,13 @@ local HOVER_NOTE = "A keyboard key does this where the \"Hover casting\" step sa
 -- The three ways of hover casting, as the step of that name offers them.
 local HOVER_MODES = {
     { id = "frames", text = "Unit frames only",
-      note = "Every key casts only while the cursor is on a unit frame (party, raid, target and the like). "
-          .. "Nothing is taken from the game: away from a frame your keys do what they always did. The safe choice." },
+      note = "Keys cast only on unit frames. Everywhere else they keep their game binding. The safe choice." },
     { id = "hover", text = "Any unit under the cursor",
-      note = "Your keys also cast on a character in the world or on a nameplate, without targeting it. "
-          .. "ClickLegend then has those keys all the time: what the game had on them stops, "
-          .. "and with nothing under the cursor they do nothing. The wheel still zooms the camera there." },
+      note = "Also on nameplates and characters in the world, without targeting them. "
+          .. "ClickLegend takes these keys from the game. The wheel still zooms away from a unit." },
     { id = "target", text = "Under the cursor, else my target",
-      note = "As above, and with nothing fitting under the cursor the same spell goes to your target, "
-          .. "so the key always does something. What most people who cast by mouseover want. "
-          .. "The wheel is left out of that part: away from a unit it zooms the camera." },
+      note = "The same, and with nothing under the cursor the spell goes to your target. "
+          .. "What most people who cast by mouseover want." },
 }
 local MODIFIER_KEY = {
     LSHIFT = true, RSHIFT = true, LCTRL = true, RCTRL = true, LALT = true, RALT = true,
@@ -84,6 +82,7 @@ local SLOTS = {
     { id = "ally", text = "On an ally", color = { 0.05, 0.82, 0.62 } },
     { id = "dead", text = "On a dead ally", color = { 0.75, 0.75, 0.75 } },
     { id = "enemy", text = "On an enemy", color = { 0.90, 0.25, 0.25 } },
+    { id = "self", text = "Else, on myself", color = { 0.95, 0.80, 0.30 } },
 }
 local KEY_NOTE = {
     BUTTON1 = "Left click normally targets the unit. If you put a spell on it for allies, "
@@ -110,6 +109,8 @@ local sideHeard = nil               -- feedback on the side buttons page
 local sideListening = false         -- the side buttons page hears the keyboard
 local quick = false                 -- on the short way: the side buttons page goes straight to the end
 local hoverPick = nil               -- what the hover casting page picked in this run; nil: left as the set has it
+local autoOn = false                -- click casting was switched on when the last page was reached, once a run
+local dropped = {}                  -- names of the keys taken out because their button was switched off
 local Refresh
 
 -------------------------------------------------------------------------------
@@ -128,7 +129,13 @@ end
 local function Pages()
     local list = { "start" }
     if HasSideBlock() then list[#list + 1] = "side" end
-    for _, name in ipairs({ "hover", "buttons", "keys", "options", "done" }) do list[#list + 1] = name end
+    list[#list + 1] = "buttons"
+    list[#list + 1] = "keys"
+    -- Hover casting is asked once there is a key it is about (a keyboard key,
+    -- the wheel, a mouse button past the third), and not of someone who
+    -- only uses left, right and middle click.
+    if KeyboardKeys() > 0 then list[#list + 1] = "hover" end
+    list[#list + 1] = "done"
     return list
 end
 
@@ -151,6 +158,12 @@ local function StartItems()
     local items = {}
     local _, name = ActiveSet()
     if name then items[#items + 1] = { text = "The set in use: " .. name, value = "keep" } end
+    -- Sets made on another character: this one can use them as they are.
+    for _, other in ipairs(ns.SetNames()) do
+        if other ~= name then
+            items[#items + 1] = { text = "Your set: " .. other, value = { use = other, name = "Your set: " .. other } }
+        end
+    end
     -- What another click-cast addon, or the game's own Click Casting, has now.
     for _, source in ipairs(CopySources()) do
         items[#items + 1] = { text = "A copy of your " .. source.name .. " bindings",
@@ -166,11 +179,18 @@ local function StartItems()
 end
 
 -- What the first page picks when nothing has been picked: the set in use,
--- else the first starter set for this class, else an empty set.
+-- else a set this account already has, else the first starter set for this
+-- class, else an empty set.
 local function DefaultStart()
     local items = StartItems()
     for _, item in ipairs(items) do
-        if item.value == "keep" or item.note then return item.value end
+        if item.value == "keep" then return item.value end
+    end
+    for _, item in ipairs(items) do
+        if type(item.value) == "table" and item.value.use then return item.value end
+    end
+    for _, item in ipairs(items) do
+        if item.note then return item.value end
     end
     return "empty"
 end
@@ -281,7 +301,9 @@ local function ApplyStart()
     local value = start or DefaultStart()
     if value == "keep" and ActiveSet() then return true end
     local name
-    if type(value) == "table" and value.copy then
+    if type(value) == "table" and value.use then
+        name = value.use
+    elseif type(value) == "table" and value.copy then
         name = CopyFromSource(value.copy) or nil
     elseif type(value) == "table" then
         name = AddSet(value.name, BuildTemplate(value))
@@ -302,12 +324,33 @@ local function ApplyStart()
 end
 
 -- How the set in use stands on hover casting: what was picked in this run,
--- else what its keys say (all of them, or it counts as unit frames only).
+-- else what its keys say. "mixed" when they do not agree (some were set by
+-- hand in the editor): nothing is marked then, and nothing changes until
+-- one of the three is picked.
 local function HoverMode()
     if hoverPick then return hoverPick end
     local count, anywhere, onTarget = KeyboardKeys()
-    if count == 0 or anywhere < count then return "frames" end
+    if count == 0 or anywhere == 0 then return "frames" end
+    if anywhere < count or (onTarget > 0 and onTarget < count) then return "mixed" end
     return onTarget == count and "target" or "hover"
+end
+
+-- Leaving the buttons page: a key of the set whose button was switched off
+-- there is taken out of the set, so that it no longer casts. Only keys the
+-- page can show (one modifier at most, a button in its list).
+local function DropUnchosen()
+    local set = ActiveSet()
+    if not (set and chosen) then return end
+    local listed, single, gone = {}, {}, {}
+    for _, input in ipairs(Inputs()) do listed[input] = true end
+    for _, mod in ipairs(MODS) do single[mod.prefix] = true end
+    for _, binding in ipairs(set.bindings) do
+        local mods, key = ParseKey(binding.key)
+        if single[mods] and listed[key] and not chosen[mods .. key] then gone[#gone + 1] = binding.key end
+    end
+    if #gone > 0 and Edit.RemoveKeys(gone) then
+        for _, key in ipairs(gone) do dropped[#dropped + 1] = KeyName(key) end
+    end
 end
 
 -- Puts the pick on the keys of the set. Called again whenever a page is
@@ -322,12 +365,20 @@ local function Go(to)
     heard, listening = nil, false
     if panel then panel.keyBox:EnableKeyboard(false) end
     if page == 1 and to > 1 and not ApplyStart() then return end
+    if PageName() == "buttons" and to > page then DropUnchosen() end
     if to >= 2 then
         if not chosen then SeedChosen() end
         BuildKeys()
     end
     local last = Last()
     page = to < 1 and 1 or (to > last and last or to)
+    -- The last page: the setup ends with click casting on. Once a run, so
+    -- that switching it off there and paging about leaves it off.
+    if PageName() == "done" and not autoOn then
+        autoOn = true
+        local set = ActiveSet()
+        if set and #set.bindings > 0 then SetCastEnabled(true) end
+    end
     if PageName() ~= "side" then quick = false end
     sideListening = PageName() == "side"
     if panel then panel.sideCatch:EnableKeyboard(sideListening) end
@@ -455,11 +506,13 @@ local function NewList(f, top, bottom, w)
         local to = (self:GetVerticalScroll() or 0) - delta * ROW_H * 2
         self:SetVerticalScroll(to < 0 and 0 or (to > range and range or to))
     end)
+    ns.AddScrollBar(scroll, list)
     return scroll, list
 end
 
 -- Step 3: one line of the list. The key's name, then what it does on an
--- ally, on a dead ally and on an enemy; each opens a list to pick from.
+-- ally, on a dead ally and on an enemy, and what it casts on the player when
+-- none of those fits; each opens a list to pick from.
 local function NewKeyLine(f, w, nameW, cellW, gap)
     local line = { cells = {} }
     line.name = NewText(f.keyList, 11)
@@ -475,6 +528,7 @@ local function NewKeyLine(f, w, nameW, cellW, gap)
         b.label:SetPoint("LEFT", 23, 0)
         b.label:SetPoint("RIGHT", -3, 0)
         b.label:SetJustifyH("LEFT")
+        if b.label.SetWordWrap then b.label:SetWordWrap(false) end      -- a long name is cut short, not onto the next line
         b:SetScript("OnClick", function(self)
             local key = line.key
             if not key then return end
@@ -524,7 +578,7 @@ local function Build(parent, w)
     title:SetText("Guided setup")
     f.step = NewText(f, 10, 0.6, 0.6, 0.6)
     f.step:SetPoint("LEFT", title, "RIGHT", 10, 0)
-    local close = NewButton(f, 60, 20, "Close")
+    local close = NewButton(f, 80, 20, "Exit setup")
     close:SetPoint("TOPRIGHT", 0, 0)
     close:SetScript("OnClick", Close)
 
@@ -569,16 +623,16 @@ local function Build(parent, w)
     f.nextNote:SetPoint("TOPLEFT", 0, -196)
     f.nextNote:SetWidth(w)
     f.nextNote:SetJustifyH("LEFT")
-    f.nextNote:SetText("Then press Next, bottom right. The steps ask whether your keys should cast on units in the world, "
-        .. "which buttons you use, and what each one should do. About a minute, and you can go back at any step.")
+    f.nextNote:SetText("Then press Next, bottom right. The steps ask which buttons you use, what each one should do, "
+        .. "and whether your keys should also cast on units in the world. About a minute, and you can go back at any step.")
     -- The short way out: there, but not the button that asks to be pressed.
-    f.quickStart = NewButton(f, 200, 22, "Skip the setup: use it and turn on")
+    f.quickStart = NewButton(f, 230, 22, "Skip the setup: use it and turn on")
     f.quickStart:SetPoint("BOTTOMLEFT", 0, 0)
     f.quickStart.label:SetTextColor(0.6, 0.6, 0.6)
     f.quickStart:SetScript("OnClick", function() Safe(QuickStart) end)
     f.quickNote = NewText(f, 10, 0.5, 0.5, 0.5)
     f.quickNote:SetPoint("LEFT", f.quickStart, "RIGHT", 10, 0)
-    f.quickNote:SetWidth(w - 370)
+    f.quickNote:SetWidth(w - 400)
     f.quickNote:SetJustifyH("LEFT")
     f.quickNote:SetText("Takes the set as it is. Nothing is asked.")
 
@@ -607,9 +661,8 @@ local function Build(parent, w)
     f.hoverFoot:SetPoint("TOPLEFT", 0, -312)
     f.hoverFoot:SetWidth(w)
     f.hoverFoot:SetJustifyH("LEFT")
-    f.hoverFoot:SetText("This is about keyboard keys, the wheel and extra mouse buttons (the fourth and up). Left, right and "
-        .. "middle click stay on unit frames, with or without Shift, Ctrl or Alt: the game needs them in the world. "
-        .. "A single key can be set either way later: Bindings tab, click the key.")
+    f.hoverFoot:SetText("For keyboard keys, the wheel and mouse buttons 4 and up. Left, right and middle click stay on "
+        .. "unit frames. One key can be set by itself later: Bindings tab, click the key.")
 
     -- Your side buttons: a box per button of the block, and a wide box that
     -- hears the key or mouse button pressed for the one being asked about.
@@ -742,7 +795,7 @@ local function Build(parent, w)
     f.keyBox:SetScript("OnKeyDown", function(_, key) Safe(HeardKey, key) end)
 
     -- Step 3: every chosen key on a line of its own, the three sides beside it.
-    local keyNameW, keyGap = 140, 4
+    local keyNameW, keyGap = 112, 4
     local keyCellW = (w - keyNameW - keyGap * (#SLOTS - 1)) / #SLOTS
     f.keyHeads = {}
     for s, slot in ipairs(SLOTS) do
@@ -758,41 +811,6 @@ local function Build(parent, w)
     f.note:SetPoint("BOTTOMLEFT", 0, 34)
     f.note:SetWidth(w)
     f.note:SetJustifyH("LEFT")
-
-    -- Step 4: the options most people ask about, each a switch with a line
-    -- of explanation.
-    f.opts = {}
-    local function Option(id, y, onClick)
-        local opt = {}
-        opt.button = NewButton(f, 46, 22)
-        opt.button:SetPoint("TOPLEFT", 0, y)
-        opt.button:SetScript("OnClick", function() Safe(onClick); Refresh() end)
-        opt.label = NewText(f, 12)
-        opt.label:SetPoint("LEFT", opt.button, "RIGHT", 8, 0)
-        opt.note = NewText(f, 10, 0.6, 0.6, 0.6)
-        opt.note:SetPoint("TOPLEFT", 54, y - 23)
-        opt.note:SetWidth(w - 54)
-        opt.note:SetJustifyH("LEFT")
-        function opt.SetShown(shown)
-            opt.button:SetShown(shown); opt.label:SetShown(shown); opt.note:SetShown(shown)
-        end
-        f.opts[id] = opt
-        return opt
-    end
-    Option("spec", -100, function()
-        local _, _, own = SpecState()
-        SetSpecOnly(not own)
-    end)
-    Option("down", -156, function()
-        local settings = CastSettings()
-        if settings then SetCastDown(not settings.down) end
-    end)
-    Option("picture", -212, function()
-        SetSettings({ layout = db.layout == "mouse" and "horizontal" or "mouse" })
-    end)
-    Option("tooltip", -268, function()
-        SetSettings({ tooltip = not db.tooltip })
-    end)
 
     -- Step 5: the summary. The button says what a click on it does; the
     -- line beside it says how things stand.
@@ -839,7 +857,7 @@ local function ShowSlot(b, key, slot)
     if action then
         local entry = ActionEntry(action)
         local rank = action.pinned and RankText(action.spellID)
-        b.label:SetText(entry.name .. (rank and ("  (" .. rank .. ")") or ""))
+        b.label:SetText(entry.name .. (rank and ("  " .. rank:gsub("^Rank ", "R")) or ""))
         b.label:SetTextColor(1, 1, 1)
         b.icon:SetTexture(entry.icon)
         b.icon:Show()
@@ -901,7 +919,18 @@ local function ShowKeys(f, shown)
         local known = false
         for _, key in ipairs(keys) do known = known or key == noteKey end
         local _, input = ParseKey(known and noteKey or "")
-        f.note:SetText(known and (KEY_NOTE[input] or (not input:match("^BUTTON%d+$") and HOVER_NOTE)) or "")
+        local note = known and (KEY_NOTE[input] or (not input:match("^BUTTON%d+$") and HOVER_NOTE)) or ""
+        if known and input:match("^MOUSEWHEEL") then
+            -- What the wheel does depends on how this key is set for hover casting.
+            local set = ActiveSet()
+            for _, binding in ipairs(set and set.bindings or {}) do
+                if binding.key == noteKey and binding.hover then
+                    note = binding.orTarget and "The wheel casts here everywhere, on your target when no unit is under the cursor: it no longer zooms."
+                        or "The wheel casts while a unit is under the cursor; elsewhere it zooms as usual."
+                end
+            end
+        end
+        f.note:SetText(note)
     end
 end
 
@@ -963,7 +992,7 @@ local function ChangesText(on)
     end
     local taken = TakenText()
     if taken ~= "" then
-        out[#out + 1] = "Keys that work anywhere are ClickLegend's all the time. The game had these on them: " .. taken .. "."
+        out[#out + 1] = "Hover casting keys are ClickLegend's all the time. The game had these on them: " .. taken .. "."
     end
     if not on and ns.CastBlocked() then out[#out + 1] = ns.CastBlocked() end
     if on then
@@ -975,39 +1004,10 @@ local function ChangesText(on)
     return table.concat(out, "\n")
 end
 
-local function ShowOptions(f, shown)
-    for _, opt in pairs(f.opts) do opt.SetShown(false) end
-    if not shown then return end
-    local function Set(opt, on, label, note)
-        opt.SetShown(true)
-        opt.button.label:SetText(on and "On" or "Off")
-        if on then
-            opt.button.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
-        else
-            opt.button.label:SetTextColor(0.6, 0.6, 0.6)
-        end
-        opt.label:SetText(label)
-        opt.note:SetText(note)
-    end
-    local specID, specName, own = SpecState()
-    if specID then
-        Set(f.opts.spec, own, "Use this set for " .. specName .. " only",
-            "On: your other specs keep the set they had, and each can be given its own. Off: every spec uses this set.")
-    end
-    local settings = CastSettings()
-    Set(f.opts.down, settings and settings.down, "Cast as the mouse button goes down",
-        "On: a click on a unit frame casts at once. Off: when you let the button go, as the game does.")
-    if db then
-        Set(f.opts.picture, db.layout == "mouse", "Show the legend as one large picture of your mouse",
-            "On: a large mouse with each button's spells beside it. Off: rows of spell icons, a small mouse above each.")
-        Set(f.opts.tooltip, db.tooltip, "List your bindings in unit tooltips",
-            "On: the tooltip of a unit frame under the cursor lists what each key does there. Off: tooltips are left alone.")
-    end
-end
-
 -- The hover casting page: the three ways, the one in force marked.
 local function ShowHover(f, shown)
     local now = shown and HoverMode()
+    f.hoverMixed = now == "mixed"
     for _, pick in ipairs(f.hoverModes) do
         pick:SetShown(shown); pick.note:SetShown(shown)
         pick.mark:SetShown(shown and pick.id == now)
@@ -1031,7 +1031,7 @@ Refresh = function()
     local name = PageName()
     local onStart, onSide, onButtons = name == "start", name == "side", name == "buttons"
     local onHover = name == "hover"
-    local onKeys, onOptions, onEnd = name == "keys", name == "options", name == "done"
+    local onKeys, onEnd = name == "keys", name == "done"
     f.step:SetText("Step " .. page .. " of " .. Last())
     local value = start or DefaultStart()
     f.start:SetShown(onStart); f.startLabel:SetShown(onStart)
@@ -1043,7 +1043,6 @@ Refresh = function()
     f.enable:SetShown(onEnd); f.state:SetShown(onEnd); f.changes:SetShown(onEnd)
     ShowButtons(f, onButtons)
     ShowKeys(f, onKeys)
-    ShowOptions(f, onOptions)
     ShowHover(f, onHover)
     f.back:SetShown(not onStart)
     f.skip:SetShown(not onStart and not onEnd)
@@ -1060,7 +1059,9 @@ Refresh = function()
             .. "That shows ClickLegend what each one sends, so that every spell is drawn beside the right button.")
     elseif onHover then
         f.head:SetText("Hover casting")
-        f.text:SetText("Should your keys cast only on unit frames, or on any unit the cursor is on? Pick one.")
+        f.text:SetText(f.hoverMixed and ("Your keys differ now: some cast on any unit under the cursor, some only on unit frames. "
+                .. "Pick one to make them all the same, or press Next to leave them as they are.")
+            or "Should your keys cast only on unit frames, or on any unit the cursor is on? Pick one.")
     elseif onButtons then
         f.head:SetText("Your buttons")
         f.text:SetText("Switch on what you want to set up: each button on its own (Plain) and with Shift, Ctrl or Alt. "
@@ -1070,18 +1071,14 @@ Refresh = function()
         f.text:SetText(#keys > 0 and ("Click a box to pick what the key does there; type to search your spells. "
                 .. "Leave a box on Nothing if you do not want the key for that.")
             or "Nothing is switched on. Go back and switch on the buttons you want to set up.")
-    elseif onOptions then
-        f.head:SetText("Options")
-        f.text:SetText("Things people often ask for. Leave them as they are if you are not sure; "
-            .. "all of them can be changed later in the Bindings tab.")
     else
         local set, name = ActiveSet()
         local settings = CastSettings()
         local on = settings and settings.enabled
         f.head:SetText("Done")
         f.text:SetText((name and (name .. " has " .. #set.bindings .. " keys. ") or "")
-            .. "The Bindings tab lists them: click a key there to change it, or to add rules for combat, forms and more. "
-            .. "Undo takes back the last change.")
+            .. (#dropped > 0 and ("Taken out, as you switched them off: " .. table.concat(dropped, ", ") .. ". ") or "")
+            .. "The Bindings tab lists them: click a key there to change it, or to add rules for combat, forms and more.")
         f.enable.label:SetText(on and "Turn click casting off" or "Turn click casting on")
         f.state:SetText(on and "Click casting is on." or "Click casting is off.")
         if on then
@@ -1100,7 +1097,7 @@ local function OpenWizard(parent, w)
     if not panel then panel = Build(parent, w) end
     page, start, chosen, keys, heard, typedKeys, listening, noteKey = 1, nil, nil, {}, nil, {}, false, nil
     sideAt, sideHeard, sideListening, quick = NextSide(1), nil, false, false
-    hoverPick = nil
+    hoverPick, autoOn, dropped = nil, false, {}
     panel.keyBox:EnableKeyboard(false)
     panel.sideCatch:EnableKeyboard(false)
     panel:Show()

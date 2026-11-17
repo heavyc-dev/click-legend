@@ -265,11 +265,22 @@ local function GetCell(i)
         cell:SetScript("OnDragStop", DragStop)
         -- A click (not a drag) on one of ClickLegend's own keys opens it in the editor.
         cell:SetScript("OnMouseDown", function() cell.dragged = false end)
+        -- With a spell held on the cursor (dragged from the spellbook) the click,
+        -- or letting the spell go here, puts it on that key instead.
+        local function Dropped(self)
+            if not (ownSource and self.key and ns.DropOnKey and GetCursorInfo) then return false end
+            local ok, held = pcall(GetCursorInfo)
+            if not (ok and held) then return false end
+            Safe(ns.DropOnKey, (self.mods or "") .. self.key)
+            return true
+        end
         cell:SetScript("OnMouseUp", function(self, button)
-            if button == "LeftButton" and not self.dragged and ownSource and self.key and ns.OpenKey then
+            if button ~= "LeftButton" or self.dragged or Dropped(self) then return end
+            if ownSource and self.key and ns.OpenKey then
                 Safe(ns.OpenKey, (self.mods or "") .. self.key)
             end
         end)
+        cell:SetScript("OnReceiveDrag", Dropped)
         cell:SetScript("OnEnter", function(self) Safe(ShowCellTooltip, self) end)
         cell:SetScript("OnLeave", function() if GameTooltip and GameTooltip.Hide then GameTooltip:Hide() end end)
         cells[i] = cell
@@ -553,6 +564,7 @@ end
 
 -- Why the entry's spell cannot be cast at this moment, or false when it can:
 --   "range"     the unit under the cursor is of this row's side and out of range
+--               (for a rule about a unit of its own: that unit is out of range)
 --   "mana"      not enough mana, rage or energy
 --   "cooldown"  on cooldown, longer than the global one (start and length follow)
 --   "other"     the game says it is not usable, for some other reason
@@ -565,8 +577,8 @@ end
 local function CannotCast(entry, side)
     local id = entry.spellID
     if not (id and C_Spell) or entry.missing then return false end
-    if hover.side == side and C_Spell.IsSpellInRange then
-        local ok, inRange = pcall(C_Spell.IsSpellInRange, id, "mouseover")
+    if (entry.unit or hover.side == side) and C_Spell.IsSpellInRange then
+        local ok, inRange = pcall(C_Spell.IsSpellInRange, id, entry.unit or "mouseover")
         if ok and Known(inRange) and inRange == false then return "range" end
     end
     if C_Spell.GetSpellCooldown then
@@ -602,11 +614,13 @@ local function CastableSignature()
     return table.concat(parts)
 end
 
--- How an icon looks for each reason its spell cannot be cast: red out of
--- range, blue without the mana, grey on cooldown (under the sweep).
+-- How an icon looks for each reason its spell cannot be cast: the setting
+-- that holds its tint (by default orange out of range, blue without the
+-- mana, grey on cooldown under the sweep) and how far it is faded. Not red
+-- for range: red is what the enemy side is drawn in by default.
 local REASON_LOOK = {
-    range = { 1, 0.3, 0.3, 0.85 }, mana = { 0.4, 0.5, 1, 0.85 },
-    cooldown = { 0.6, 0.6, 0.6, 0.8 }, other = { 1, 1, 1, 0.45 },
+    range = { "far", 0.85 }, mana = { "mana", 0.85 },
+    cooldown = { "cool", 0.8 }, other = { nil, 0.45 },
 }
 
 -- sec: the section being drawn ({ mods, alpha = function(side) }). `keyed`:
@@ -633,9 +647,10 @@ local function PlaceCell(draw, sec, key, side, x, y, size, entry, keyed)
         else
             local look = reason and REASON_LOOK[reason]
             if cell.icon.SetVertexColor then
-                cell.icon:SetVertexColor(look and look[1] or 1, look and look[2] or 1, look and look[3] or 1)
+                local tint = look and look[1]
+                cell.icon:SetVertexColor(tint and db[tint .. "R"] or 1, tint and db[tint .. "G"] or 1, tint and db[tint .. "B"] or 1)
             end
-            cell:SetAlpha(broken and alpha * 0.45 or (look and alpha * look[4]) or alpha)
+            cell:SetAlpha(broken and alpha * 0.45 or (look and alpha * look[2]) or alpha)
             if cell.sweep then
                 if reason == "cooldown" then
                     cell.sweep:SetCooldown(start, length)

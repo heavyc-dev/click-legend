@@ -84,6 +84,11 @@ local DEFAULTS = {
     anchorGap = 6,
     allyR = 0.05, allyG = 0.82, allyB = 0.62,
     enemyR = 0.90, enemyG = 0.25, enemyB = 0.25,
+    -- What an icon is tinted when its spell cannot be cast: out of range,
+    -- no mana, on cooldown.
+    farR = 1, farG = 0.6, farB = 0.1,
+    manaR = 0.4, manaG = 0.5, manaB = 1,
+    coolR = 0.6, coolG = 0.6, coolB = 0.6,
     background = false, bgR = 0.04, bgG = 0.04, bgB = 0.04, bgA = 0.6, bgPadding = 4,
     tooltip = true, tooltipWorld = false,
     layout = "horizontal",      -- horizontal | vertical | mouse
@@ -105,6 +110,9 @@ local RANGES = {
     bgR = { 0, 1 }, bgG = { 0, 1 }, bgB = { 0, 1 }, bgA = { 0, 1 },
     allyR = { 0, 1 }, allyG = { 0, 1 }, allyB = { 0, 1 },
     enemyR = { 0, 1 }, enemyG = { 0, 1 }, enemyB = { 0, 1 },
+    farR = { 0, 1 }, farG = { 0, 1 }, farB = { 0, 1 },
+    manaR = { 0, 1 }, manaG = { 0, 1 }, manaB = { 0, 1 },
+    coolR = { 0, 1 }, coolG = { 0, 1 }, coolB = { 0, 1 },
     anchorGap = { 0, 60, true },
     mouseSize = { 96, 256, true },
     minimapAngle = { 0, 360 },

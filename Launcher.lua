@@ -14,8 +14,8 @@ local cos, sin, rad, deg, atan2, max = math.cos, math.sin, math.rad, math.deg, m
 local db
 ns.Subscribe("db", function(value) db = value end)
 
-local ACCENT, ApplyFont, NewButton, NewText, Safe =
-    ns.ACCENT, ns.ApplyFont, ns.NewButton, ns.NewText, ns.Safe
+local ACCENT, NewButton, NewText, Safe =
+    ns.ACCENT, ns.NewButton, ns.NewText, ns.Safe
 local OpenGuidedSetup, ToggleWindow =
     ns.OpenGuidedSetup, ns.ToggleWindow
 
@@ -154,25 +154,23 @@ local function BuildWelcome()
     return f
 end
 
-local WELCOME_TEXT = "Click casting: click a player's unit frame to cast on them, without targeting them first. "
-    .. "ClickLegend does it with rules, like \"dead ally: resurrect, ally: heal, enemy: damage\" on one key, "
-    .. "and shows what every key does in a legend on screen.\n\n"
-    .. "Guided setup starts from a ready-made set for your class: two clicks and it is on. "
-    .. "You can open either one later with /clg or the minimap button."
+local WELCOME_TEXT = "Click casting: click a unit frame to cast on that player, without targeting. "
+    .. "Hover casting: press a key to cast on whoever is under your cursor.\n\n"
+    .. "One key can do several things (dead ally: resurrect, ally: heal, enemy: damage), "
+    .. "and a legend on screen shows what every key does.\n\n"
+    .. "The guided setup takes about a minute. /clg opens the settings later."
 
 -- What is new, for someone who already uses the addon. Shown once per
 -- account for each NEWS_VERSION; raise it, and rewrite NEWS_TEXT, only when
 -- a release has something worth stopping a player for.
-local NEWS_VERSION = 2              -- 1: 2.1.0 (a line in chat), 2: 2.1.1 (this window)
-local NEWS_TEXT = "New since you set up:\n\n"
-    .. "- Guided setup in two clicks, from a ready-made set for your class\n"
-    .. "- Quickbind: point at a spell, press the key you want it on\n"
-    .. "- Keys that work on any unit under the cursor, not only unit frames\n"
-    .. "- The legend as a picture of your mouse, or beside your cursor\n"
-    .. "- Cooldowns, mana and range shown on the legend\n"
-    .. "- Undo, a set for each spec, Dispel and Resurrect for any class\n\n"
-    .. "Would you like to go through the setup again? It starts from the keys you have now, "
-    .. "and changes only what you change."
+local NEWS_VERSION = 3              -- 1: 2.1.0 (a line in chat), 2: 2.1.1 (this window), 3: 2.2.0
+local NEWS_TEXT = "New in this version:\n\n"
+    .. "- Hover casting: cast on any unit under your cursor\n"
+    .. "- The mouse wheel can hover cast and still zooms\n"
+    .. "- \"Add a rule\" asks what you want; drag spells onto keys\n"
+    .. "- A key can fall back to you, your target or your focus\n"
+    .. "- A shorter guided setup that ends with click casting on\n\n"
+    .. "Run the guided setup again? It keeps your keys."
 
 -- The window, made on first use, saying one thing or the other.
 local function ShowCard(height, title, text, justify, guideLabel)
@@ -206,7 +204,7 @@ local function ShowNews(again, welcoming)
     local seen = (tonumber(store.news) or 0) >= NEWS_VERSION
     store.news = NEWS_VERSION
     if welcoming or (seen and not again) then return false end
-    return ShowCard(390, "What is new in ClickLegend", NEWS_TEXT, "LEFT", "Guided setup")
+    return ShowCard(300, "What is new in ClickLegend", NEWS_TEXT, "LEFT", "Guided setup")
 end
 
 -- At login: the button at once, the welcome a moment later, when the rest
