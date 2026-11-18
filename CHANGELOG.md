@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+Added:
+- "Hide the plain Target and Menu clicks" on the Display tab (`/clg basics`): the left click that targets and the right click that opens the menu are left out of the legend and the tooltip. They keep working, in ClickLegend's own click casting and in Clique or any other addon; only the display is shorter. Off by default.
+
 ## 2.2.1
 Fixed:
 - Guided setup on a character with no set of its own started from another character's set and changed it for that character. It now starts from a starter set for your class unless the character can cast most of the other set, and the first page says when the set picked is shared by all your characters.

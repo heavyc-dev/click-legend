@@ -74,6 +74,9 @@ local OPTIONS = {
           order = { "held", "all" },
           tip = "Show while held: hold Shift, Ctrl or Alt to see the keys bound with it. "
               .. "Always show stacks them under the plain ones, so nothing has to be held to read them." },
+        { kind = "toggle", key = "hideBasics", text = "Hide the plain Target and Menu clicks",
+          tip = "Leaves the left click that targets and the right click that opens the menu out of the legend "
+              .. "and the tooltip. They keep working; only the display is shorter." },
         { header = "LAYOUT" },
         { kind = "choice", key = "layout", text = "Layout",
           values = { horizontal = "Horizontal", vertical = "Vertical", mouse = "Mouse picture" },

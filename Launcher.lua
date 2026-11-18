@@ -163,14 +163,14 @@ local WELCOME_TEXT = "Click casting: click a unit frame to cast on that player, 
 -- What is new, for someone who already uses the addon. Shown once per
 -- account for each NEWS_VERSION; raise it, and rewrite NEWS_TEXT, only when
 -- a release has something worth stopping a player for.
-local NEWS_VERSION = 3              -- 1: 2.1.0 (a line in chat), 2: 2.1.1 (this window), 3: 2.2.0
+local NEWS_VERSION = 4              -- 1: 2.1.0 (a line in chat), 2: 2.1.1 (this window), 3: 2.2.0, 4: hide Target and Menu
 local NEWS_TEXT = "New in this version:\n\n"
-    .. "- Hover casting: cast on any unit under your cursor\n"
-    .. "- The mouse wheel can hover cast and still zooms\n"
-    .. "- \"Add a rule\" asks what you want; drag spells onto keys\n"
-    .. "- A key can fall back to you, your target or your focus\n"
-    .. "- A shorter guided setup that ends with click casting on\n\n"
-    .. "Run the guided setup again? It keeps your keys."
+    .. "The legend can leave out the plain left click that targets and the "
+    .. "right click that opens the menu. Both keep working, in Clique or any "
+    .. "other addon too; the legend is just shorter.\n\n"
+    .. "Switch it on with /clg basics, or in the settings: Display, "
+    .. "\"Hide the plain Target and Menu clicks\".\n\n"
+    .. "Thank you to dekazakoff for the suggestion."
 
 -- The window, made on first use, saying one thing or the other.
 local function ShowCard(height, title, text, justify, guideLabel)

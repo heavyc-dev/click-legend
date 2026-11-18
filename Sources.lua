@@ -581,12 +581,40 @@ local function SetSource(name)
     ns.Publish("source", name)
 end
 
+-- Setting `hideBasics`: the plain left click that targets and the plain right
+-- click that opens the menu are what every unit frame does anyway, so they
+-- can be left out of the legend and the tooltip. Only what is shown changes;
+-- the bindings are untouched. Returns nil when nothing else is bound.
+local BASICS = { BUTTON1 = TYPE_NAME.target, BUTTON2 = TYPE_NAME.menu }
+
+local function DropBasics(layers)
+    local layer = layers[""]
+    if not layer then return layers end
+    local kept = {}
+    for _, key in ipairs(layer.keys) do
+        local slot, basic = layer.byKey[key], BASICS[key]
+        if basic then
+            for _, side in ipairs({ "ally", "enemy" }) do
+                if slot[side] and slot[side].name == basic then slot[side] = nil end
+            end
+        end
+        if next(slot) then kept[#kept + 1] = key else layer.byKey[key] = nil end
+    end
+    layer.keys = kept
+    if #kept == 0 then layers[""] = nil end
+    return next(layers) and layers or nil
+end
+
 local function CollectLayers()
     for _, source in ipairs(SOURCES) do
         if db.source == "auto" or db.source == source.id then
             local ok, layers = pcall(source.collect)
             if not ok then Report(layers); layers = nil end
-            if layers and next(layers) then SetSource(source.name); return layers end
+            if layers and next(layers) then
+                SetSource(source.name)
+                if db.hideBasics then return DropBasics(layers) end
+                return layers
+            end
         end
     end
     SetSource(nil)
