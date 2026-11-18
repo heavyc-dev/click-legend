@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.3.0
 Added:
 - "Hide the plain Target and Menu clicks" on the Display tab (`/clg basics`): the left click that targets and the right click that opens the menu are left out of the legend and the tooltip. They keep working, in ClickLegend's own click casting and in Clique or any other addon; only the display is shorter. Off by default.
 
