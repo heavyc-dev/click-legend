@@ -1097,10 +1097,12 @@ local function RenderNow()
     local empty = #sections == 0
 
     -- While unlocked the legend stays up whatever the visibility rule says,
-    -- so there is always something to drag. With nothing bound anywhere that
-    -- is an empty box, which is only worth showing while the settings are open.
-    local window = not layers and ns.GetWindow and ns.GetWindow()
-    local idle = not layers and not (window and window:IsShown())
+    -- so there is always something to drag. With nothing to draw (nothing
+    -- bound, or nothing on the layer in view: the plain clicks hidden and the
+    -- rest behind a modifier) that is an empty box, which is only worth
+    -- showing while the settings are open.
+    local window = empty and ns.GetWindow and ns.GetWindow()
+    local idle = empty and not (window and window:IsShown())
     if db.hidden or idle or ((empty or not VisibleNow()) and not unlocked) then
         panel:Hide()
         return

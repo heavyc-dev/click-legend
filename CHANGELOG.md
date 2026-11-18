@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3.1
+Fixed:
+- With the plain Target and Menu clicks hidden and every other binding behind Shift, Ctrl or Alt, an unlocked legend stayed on screen as an empty box. It now goes away until there is something to show: hold the modifier, or open the settings to move it.
+
 ## 2.3.0
 Added:
 - "Hide the plain Target and Menu clicks" on the Display tab (`/clg basics`): the left click that targets and the right click that opens the menu are left out of the legend and the tooltip. They keep working, in ClickLegend's own click casting and in Clique or any other addon; only the display is shorter. Off by default.
