@@ -88,6 +88,7 @@ local function Help()
     print("  /clg layers held | all - modifier layers shown (now " .. db.layers .. ")")
     print("  /clg anchor screen | party | cursor, /clg side above | below | left | right, /clg gap <0-60>")
     print("  /clg basics - hide or show the plain Target and Menu clicks (now " .. (db.hideBasics and "hidden" or "shown") .. ")")
+    print("  /clg npc - hide the legend over friendly NPCs, or not (now " .. (db.hideNPC and "hidden" or "shown") .. ")")
     print("  /clg hoverdim | missing - toggle row dimming, greying of broken bindings")
     print("  /clg usable | flash - toggle marking spells you cannot cast, the flash when one is cast")
     print("  /clg off dim | hide - spells that do not apply to the hovered unit (now " .. db.offStyle .. ")")
@@ -117,7 +118,7 @@ end
 
 -- Each kind of command is a table from its name to the setting it changes.
 local TOGGLES = {
-    basics = "hideBasics", hoverdim = "hoverDim", missing = "flagMissing", usable = "flagUnusable", flash = "flash", bars = "bars", labels = "labels", minimap = "minimap",
+    basics = "hideBasics", npc = "hideNPC", hoverdim = "hoverDim", missing = "flagMissing", usable = "flagUnusable", flash = "flash", bars = "bars", labels = "labels", minimap = "minimap",
     bg = "background", flip = "enemyFirst", reverse = "reverse",
 }
 local NUMBERS = {

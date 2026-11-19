@@ -196,6 +196,8 @@ Commands
   /clg flash                    toggle the flash when a shown spell is cast
   /clg basics                   hide or show the plain left click "Target"
                                 and right click "Menu" (they keep working)
+  /clg npc                      hide the legend while the cursor is on a
+                                friendly NPC in the world, or not
   /clg hoverdim                 toggle dimming of the row that does not apply
   /clg missing                  toggle greying of bindings that cannot fire
   /clg usable                   toggle marking spells you cannot cast now

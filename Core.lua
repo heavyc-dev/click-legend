@@ -75,6 +75,7 @@ local DEFAULTS = {
     source = "auto",            -- auto | own | eui | clique | vuhdo | healbot | blizzard
     layers = "held",            -- held | all: which modifier layers are drawn
     hideBasics = false,         -- leave the plain left click "Target" and right click "Menu" out of the legend
+    hideNPC = false,            -- no legend while the cursor is on a friendly NPC in the world
     hoverDim = true,            -- dim the row that does not apply to the hovered unit
     flagMissing = true,         -- grey out bindings whose spell or macro is gone
     flagUnusable = true,        -- mark spells that cannot be cast right now

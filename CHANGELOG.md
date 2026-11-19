@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.4.0
+Added:
+- "Hide over friendly NPCs" on the Display tab (`/clg npc`): no legend while the cursor is on a vendor, a quest giver, a trainer or another friendly NPC in the world. It stays for friendly players, their pets, enemies and every unit frame. Made for a legend attached to the cursor; off by default. Thank you to dekazakoff for the suggestion.
+
 ## 2.3.1
 Fixed:
 - With the plain Target and Menu clicks hidden and every other binding behind Shift, Ctrl or Alt, an unlocked legend stayed on screen as an empty box. It now goes away until there is something to show: hold the modifier, or open the settings to move it.

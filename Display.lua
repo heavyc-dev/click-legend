@@ -129,7 +129,9 @@ end
 --  What is under the cursor. Drives two things: dimming the row that does not
 --  apply to the hovered unit, and the "while hovering a unit frame" visibility.
 -------------------------------------------------------------------------------
-local hover = { side = nil, onFrame = false, dead = false }
+-- npc: a friendly unit in the world that no player controls (a vendor, a quest
+-- giver, a trainer). The setting `hideNPC` takes the legend away over one.
+local hover = { side = nil, onFrame = false, dead = false, npc = false }
 
 local function OverWorld()
     local focus
@@ -145,7 +147,7 @@ end
 
 -- Returns true when the hovered unit's side or frame state changed.
 local function ReadHover()
-    local side, onFrame, dead = nil, false, false
+    local side, onFrame, dead, npc = nil, false, false, false
     if UnitExists and UnitCanAttack then
         local ok, exists = pcall(UnitExists, "mouseover")
         if ok and not (issecretvalue and issecretvalue(exists)) and exists then
@@ -157,11 +159,20 @@ local function ReadHover()
                     local ok3, gone = pcall(UnitIsDeadOrGhost, "mouseover")
                     dead = ok3 and not (issecretvalue and issecretvalue(gone)) and gone and true or false
                 end
+                -- A pet or a guardian is a player's, so it is not an NPC here;
+                -- nor is anything on a unit frame, which is there to be clicked.
+                -- An answer that is missing or secret counts as "not an NPC".
+                if side == "ally" and not onFrame and UnitIsPlayer and UnitPlayerControlled then
+                    local ok4, isPlayer = pcall(UnitIsPlayer, "mouseover")
+                    local ok5, owned = pcall(UnitPlayerControlled, "mouseover")
+                    npc = ok4 and ok5 and not (issecretvalue and (issecretvalue(isPlayer) or issecretvalue(owned)))
+                        and not isPlayer and not owned or false
+                end
             end
         end
     end
-    if side == hover.side and onFrame == hover.onFrame and dead == hover.dead then return false end
-    hover.side, hover.onFrame, hover.dead = side, onFrame, dead
+    if side == hover.side and onFrame == hover.onFrame and dead == hover.dead and npc == hover.npc then return false end
+    hover.side, hover.onFrame, hover.dead, hover.npc = side, onFrame, dead, npc
     return true
 end
 
@@ -1103,7 +1114,7 @@ local function RenderNow()
     -- showing while the settings are open.
     local window = empty and ns.GetWindow and ns.GetWindow()
     local idle = empty and not (window and window:IsShown())
-    if db.hidden or idle or ((empty or not VisibleNow()) and not unlocked) then
+    if db.hidden or idle or (db.hideNPC and hover.npc) or ((empty or not VisibleNow()) and not unlocked) then
         panel:Hide()
         return
     end
@@ -1317,8 +1328,8 @@ hoverDriver:SetScript("OnUpdate", function(_, dt)
     hoverElapsed = hoverElapsed + dt
     if hoverElapsed < 0.1 then return end
     hoverElapsed = 0
-    if not db or db.hidden or not (db.hoverDim or db.visibility == "hover" or ownSource or db.flagUnusable) then
-        if hover.side or hover.onFrame then hover.side, hover.onFrame, hover.dead = nil, false, false end
+    if not db or db.hidden or not (db.hoverDim or db.hideNPC or db.visibility == "hover" or ownSource or db.flagUnusable) then
+        if hover.side or hover.onFrame then hover.side, hover.onFrame, hover.dead, hover.npc = nil, false, false, false end
         return
     end
     local redraw = ReadHover()

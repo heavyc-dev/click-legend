@@ -111,6 +111,9 @@ local OPTIONS = {
           tip = "With the cursor on a friendly unit the enemy spells do not apply, and the other way round. "
               .. "Dim them fades them. Hide them takes the other row away, and leaves an empty place for a spell "
               .. "that cannot reach that unit, so the legend shows only what will work on it." },
+        { kind = "toggle", key = "hideNPC", text = "Hide over friendly NPCs",
+          tip = "No legend while the cursor is on a vendor, a quest giver, a trainer or another friendly NPC in the "
+              .. "world. It stays for friendly players, their pets, enemies and every unit frame." },
         { header = "POSITION" },
         { kind = "choice", key = "anchor", text = "Attach to",
           values = { screen = "Nothing (drag it)", party = "Party frames", cursor = "The cursor" },
