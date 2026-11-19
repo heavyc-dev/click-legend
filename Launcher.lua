@@ -14,8 +14,9 @@ local cos, sin, rad, deg, atan2, max = math.cos, math.sin, math.rad, math.deg, m
 local db
 ns.Subscribe("db", function(value) db = value end)
 
-local ACCENT, NewButton, NewText, Safe =
-    ns.ACCENT, ns.NewButton, ns.NewText, ns.Safe
+local NewButton, NewText, Safe, Skin =
+    ns.NewButton, ns.NewText, ns.Safe, ns.Skin
+local ACCENT = Skin.ACCENT
 local OpenGuidedSetup, ToggleWindow =
     ns.OpenGuidedSetup, ns.ToggleWindow
 
@@ -57,7 +58,8 @@ local function BuildButton()
     local back = b:CreateTexture(nil, "BACKGROUND")
     back:SetSize(24, 24)
     back:SetPoint("CENTER")
-    back:SetColorTexture(0.07, 0.08, 0.09, 1)
+    back:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+    b:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight", "ADD")
     local icon = b:CreateTexture(nil, "ARTWORK")
     icon:SetSize(22, 11)                        -- the grid is twice as wide as it is tall
     icon:SetPoint("CENTER")
@@ -112,37 +114,30 @@ local function Seen()
 end
 
 local function BuildWelcome()
-    local f = CreateFrame("Frame", "ClickLegendWelcome", UIParent)
+    local f = Skin.Panel("ClickLegendWelcome", UIParent, "ClickLegend")
     f:SetSize(380, 250)
     f:SetPoint("CENTER", 0, 60)
     f:SetFrameStrata("DIALOG")
     f:EnableMouse(true)
     f:Hide()
-    local edge = f:CreateTexture(nil, "BACKGROUND")
-    edge:SetAllPoints()
-    edge:SetColorTexture(0, 0, 0, 1)
-    local fill = f:CreateTexture(nil, "BORDER")
-    fill:SetPoint("TOPLEFT", 1, -1)
-    fill:SetPoint("BOTTOMRIGHT", -1, 1)
-    fill:SetColorTexture(0.07, 0.08, 0.09, 0.98)
 
     local logo = f:CreateTexture(nil, "ARTWORK")
     logo:SetSize(120, 60)
-    logo:SetPoint("TOP", 0, -16)
+    logo:SetPoint("TOP", 0, -30)
     logo:SetTexture(LOGO)
     logo:SetTexCoord(LOGO_CROP[1], LOGO_CROP[2], LOGO_CROP[3], LOGO_CROP[4])
 
     -- What it says is set each time it is shown: the welcome, or what is new.
     local title = NewText(f, 16, ACCENT[1], ACCENT[2], ACCENT[3])
-    title:SetPoint("TOP", 0, -86)
+    title:SetPoint("TOP", 0, -98)
     local text = NewText(f, 11, 0.85, 0.85, 0.85)
-    text:SetPoint("TOP", 0, -112)
+    text:SetPoint("TOP", 0, -124)
     text:SetWidth(340)
     f.title, f.text = title, text
 
     local guide = NewButton(f, 130, 26, "Guided setup")
     guide:SetPoint("BOTTOMLEFT", 16, 16)
-    guide.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
+    Skin.Emph(guide)
     guide:SetScript("OnClick", function() Seen(); Safe(OpenGuidedSetup) end)
     local settings = NewButton(f, 110, 26, "Open settings")
     settings:SetPoint("LEFT", guide, "RIGHT", 8, 0)
@@ -155,7 +150,7 @@ local function BuildWelcome()
 end
 
 local WELCOME_TEXT = "Click casting: click a unit frame to cast on that player, without targeting. "
-    .. "Hover casting: press a key to cast on whoever is under your cursor.\n\n"
+    .. "Mouseover (hover) casting: press a key to cast on whoever is under your cursor.\n\n"
     .. "One key can do several things (dead ally: resurrect, ally: heal, enemy: damage), "
     .. "and a legend on screen shows what every key does.\n\n"
     .. "The guided setup takes about a minute. /clg opens the settings later."
@@ -163,14 +158,14 @@ local WELCOME_TEXT = "Click casting: click a unit frame to cast on that player, 
 -- What is new, for someone who already uses the addon. Shown once per
 -- account for each NEWS_VERSION; raise it, and rewrite NEWS_TEXT, only when
 -- a release has something worth stopping a player for.
-local NEWS_VERSION = 4              -- 1: 2.1.0 (a line in chat), 2: 2.1.1 (this window), 3: 2.2.0, 4: 2.3.0
+local NEWS_VERSION = 5              -- 1: 2.1.0 (a line in chat), 2: 2.1.1 (this window), 3: 2.2.0, 4: 2.3.0, 5: 3.0.0
 local NEWS_TEXT = "New in this version:\n\n"
-    .. "The legend can leave out the plain left click that targets and the "
-    .. "right click that opens the menu. Both keep working, in Clique or any "
-    .. "other addon too; the legend is just shorter.\n\n"
-    .. "Switch it on with /clg basics, or in the settings: Display, "
-    .. "\"Hide the plain Target and Menu clicks\".\n\n"
-    .. "Thank you to dekazakoff for the suggestion."
+    .. "- A new look: the settings, the lists and the guided setup now look like the game's own windows\n"
+    .. "- Mouseover (hover) casting has a switch at the top of the Bindings tab; left and right click can do it too\n"
+    .. "- The legend can have a border of the game's own: Look tab, Border\n"
+    .. "- Hide the plain Target and Menu clicks from the legend: Display tab\n"
+    .. "- Hide the legend over friendly NPCs: Display tab\n\n"
+    .. "Thank you to dekazakoff for suggesting the last two."
 
 -- The window, made on first use, saying one thing or the other.
 local function ShowCard(height, title, text, justify, guideLabel)
@@ -179,7 +174,7 @@ local function ShowCard(height, title, text, justify, guideLabel)
         if not ok then ns.Report(built); return false end
         welcome = built
     end
-    welcome:SetHeight(height)
+    welcome:SetHeight(height + 14)                  -- the panel's title bar
     welcome.title:SetText(title)
     welcome.text:SetText(text)
     welcome.text:SetJustifyH(justify)

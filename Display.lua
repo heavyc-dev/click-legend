@@ -58,7 +58,42 @@ for i = 1, 4 do
     moverEdges[i] = edge
 end
 
--- The background and the outline cover the legend plus the chosen padding.
+-- Setting `border`: the game's own frame around the legend, drawn by a
+-- frame of its own under the icons. `out` is how far its art reaches past
+-- the background, so the background ends inside the frame. Made on first use;
+-- a client without the backdrop template has no border.
+local BORDERS = {
+    tooltip = { edge = "Interface\\Tooltips\\UI-Tooltip-Border", size = 16, out = 3 },
+    dialog = { edge = "Interface\\DialogFrame\\UI-DialogBox-Border", size = 24, out = 7 },
+}
+local border, borderTried, borderLook = nil, false, nil
+
+local function ApplyBorder(pad)
+    local look = BORDERS[db.border]
+    if look and not borderTried then
+        borderTried = true
+        local ok, frame = pcall(CreateFrame, "Frame", nil, panel, "BackdropTemplate")
+        if ok and frame and frame.SetBackdrop then
+            frame:SetFrameLevel(panel:GetFrameLevel() or 1)        -- under the icons
+            border = frame
+        end
+    end
+    if not border then return end
+    border:SetShown(look ~= nil)
+    if not look then return end
+    local reach = pad + look.out
+    border:ClearAllPoints()
+    border:SetPoint("TOPLEFT", panel, "TOPLEFT", -reach, reach)
+    border:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", reach, -reach)
+    if borderLook ~= db.border then
+        borderLook = db.border
+        border:SetBackdrop({ edgeFile = look.edge, edgeSize = look.size })
+        border:SetBackdropBorderColor(1, 1, 1, 1)
+    end
+end
+
+-- The background, the border and the outline cover the legend plus the
+-- chosen padding.
 local function ApplyBackground(unlocked)
     local pad = db.bgPadding
     bg:ClearAllPoints()
@@ -66,6 +101,7 @@ local function ApplyBackground(unlocked)
     bg:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", pad, -pad)
     bg:SetColorTexture(db.bgR, db.bgG, db.bgB, db.bgA)
     bg:SetShown(db.background)
+    ApplyBorder(pad)
 
     local top, bottom, left, right = moverEdges[1], moverEdges[2], moverEdges[3], moverEdges[4]
     for _, edge in ipairs(moverEdges) do edge:ClearAllPoints() end

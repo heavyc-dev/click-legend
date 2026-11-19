@@ -30,8 +30,9 @@ local _, ns = ...
 
 local ipairs, type, tonumber = ipairs, type, tonumber
 
-local ACCENT, Safe, NewButton, NewText =
-    ns.ACCENT, ns.Safe, ns.NewButton, ns.NewText
+local Safe, NewButton, NewText, Skin =
+    ns.Safe, ns.NewButton, ns.NewText, ns.Skin
+local ACCENT, Lit = Skin.ACCENT, Skin.Lit
 local ACTION_NAME, ActionEntry, ActiveSet, AddSet =
     ns.ACTION_NAME, ns.ActionEntry, ns.ActiveSet, ns.AddSet
 local BuildTemplate, CastSettings, Edit, KeyName =
@@ -61,16 +62,16 @@ local FIXED_INPUTS = { "BUTTON1", "BUTTON2", "BUTTON3", "MOUSEWHEELUP", "MOUSEWH
 local MAX_ROWS = 24                 -- the list scrolls
 local ROW_H = 24
 local SIDE_BUTTONS = 12             -- the buttons of a block of side buttons
-local HOVER_NOTE = "A keyboard key does this where the \"Hover casting\" step said: on unit frames only, "
-    .. "or on any unit under the cursor."
+local HOVER_NOTE = "A keyboard key does this where the \"Mouseover casting\" step said: on unit frames only, "
+    .. "or also on units in the world."
 -- The three ways of hover casting, as the step of that name offers them.
 local HOVER_MODES = {
-    { id = "frames", text = "Unit frames only",
+    { id = "frames", text = "Off: unit frames only",
       note = "Keys cast only on unit frames. Everywhere else they keep their game binding. The safe choice." },
-    { id = "hover", text = "Any unit under the cursor",
-      note = "Also on nameplates and characters in the world, without targeting them. "
+    { id = "hover", text = "On: also units in the world",
+      note = "Also on nameplates and characters under the cursor, without targeting them. "
           .. "ClickLegend takes these keys from the game. The wheel still zooms away from a unit." },
-    { id = "target", text = "Under the cursor, else my target",
+    { id = "target", text = "On, and else my target",
       note = "The same, and with nothing under the cursor the spell goes to your target. "
           .. "What most people who cast by mouseover want." },
 }
@@ -486,16 +487,6 @@ end
 -------------------------------------------------------------------------------
 --  Building it
 -------------------------------------------------------------------------------
-local function Lit(button, on)
-    if on then
-        button.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
-        button.bg:SetColorTexture(0.10, 0.30, 0.25, 1)
-    else
-        button.label:SetTextColor(0.5, 0.5, 0.5)
-        button.bg:SetColorTexture(0.16, 0.17, 0.19, 1)
-    end
-end
-
 local function NewList(f, top, bottom, w)
     local scroll = CreateFrame("ScrollFrame", nil, f)
     scroll:SetPoint("TOPLEFT", 0, top)
@@ -575,7 +566,7 @@ local function Build(parent, w)
     f:EnableMouse(true)                         -- nothing underneath can be clicked through it
     local fill = f:CreateTexture(nil, "BACKGROUND")
     fill:SetAllPoints()
-    fill:SetColorTexture(0.07, 0.08, 0.09, 1)
+    Skin.Fill(fill)
 
     local title = NewText(f, 13, ACCENT[1], ACCENT[2], ACCENT[3])
     title:SetPoint("TOPLEFT", 0, -2)
@@ -600,6 +591,7 @@ local function Build(parent, w)
     f.startLabel:SetText("Start from")
     f.start = NewButton(f, 360, 24)
     f.start:SetPoint("TOPLEFT", 120, -110)
+    Skin.Arrow(f.start)
     f.start:SetScript("OnClick", function(self)
         ShowMenu(self, StartItems(), function(value)
             start = value
@@ -611,6 +603,7 @@ local function Build(parent, w)
     f.mouseLabel:SetText("Your mouse")
     f.mouse = NewButton(f, 360, 24)
     f.mouse:SetPoint("TOPLEFT", 120, -144)
+    Skin.Arrow(f.mouse)
     f.mouse:SetScript("OnClick", function(self)
         ShowMenu(self, MouseItems(), function(value)
             SetSettings({ mousePic = value })
@@ -688,7 +681,7 @@ local function Build(parent, w)
     f.sideCatch = NewButton(f, 518, 36)
     f.sideCatch:SetPoint("TOPLEFT", 0, -240)
     f.sideCatch:RegisterForClicks("AnyUp")
-    f.sideCatch.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
+    Skin.Emph(f.sideCatch)
     f.sideCatch:SetScript("OnClick", function(self, mouse)
         if not sideListening then               -- any click starts it hearing the keyboard again
             sideListening, sideHeard = true, nil
@@ -836,7 +829,7 @@ local function Build(parent, w)
     f.back:SetPoint("BOTTOMLEFT", 0, 0)
     f.back:SetScript("OnClick", function() Go(page - 1) end)
     f.next = NewButton(f, 130, 28)
-    f.next.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
+    Skin.Emph(f.next)
     f.next:SetPoint("BOTTOMRIGHT", 0, 0)
     f.next:SetScript("OnClick", function()
         if page >= Last() then
@@ -862,7 +855,7 @@ local function ShowSlot(b, key, slot)
         local entry = ActionEntry(action)
         local rank = action.pinned and RankText(action.spellID)
         b.label:SetText(entry.name .. (rank and ("  " .. rank:gsub("^Rank ", "R")) or ""))
-        b.label:SetTextColor(1, 1, 1)
+        Skin.Plain(b)
         b.icon:SetTexture(entry.icon)
         b.icon:Show()
     else
@@ -947,7 +940,7 @@ local function ShowSide(f, shown)
     for n, box in ipairs(f.sideBoxes) do
         box.label:SetText(n .. ":  " .. (side[n] and LongKey(side[n]) or "not shown yet"))
         Lit(box, n == sideAt)
-        if n ~= sideAt and side[n] then box.label:SetTextColor(1, 1, 1) end
+        if n ~= sideAt and side[n] then Skin.Plain(box) end
     end
     f.sideCatch.label:SetText(not sideListening and "Click here to carry on"
         or sideAt > SIDE_BUTTONS and "Done. Click a box above to change one."
@@ -996,7 +989,7 @@ local function ChangesText(on)
     end
     local taken = TakenText()
     if taken ~= "" then
-        out[#out + 1] = "Hover casting keys are ClickLegend's all the time. The game had these on them: " .. taken .. "."
+        out[#out + 1] = "Mouseover casting keys are ClickLegend's all the time. The game had these on them: " .. taken .. "."
     end
     if not on and ns.CastBlocked() then out[#out + 1] = ns.CastBlocked() end
     if on then
@@ -1017,7 +1010,7 @@ local function ShowHover(f, shown)
         pick.mark:SetShown(shown and pick.id == now)
         if shown then
             Lit(pick, pick.id == now)
-            if pick.id ~= now then pick.label:SetTextColor(0.85, 0.85, 0.85) end
+            if pick.id ~= now then Skin.Plain(pick) end
         end
     end
     f.hoverFoot:SetShown(shown)
@@ -1065,7 +1058,7 @@ Refresh = function()
         f.text:SetText("Press each of the twelve side buttons in turn: top row first, left to right. "
             .. "That shows ClickLegend what each one sends, so that every spell is drawn beside the right button.")
     elseif onHover then
-        f.head:SetText("Hover casting")
+        f.head:SetText("Mouseover casting")
         f.text:SetText(f.hoverMixed and ("Your keys differ now: some cast on any unit under the cursor, some only on unit frames. "
                 .. "Pick one to make them all the same, or press Next to leave them as they are.")
             or "Should your keys cast only on unit frames, or on any unit the cursor is on? Pick one.")
@@ -1089,10 +1082,10 @@ Refresh = function()
         f.enable.label:SetText(on and "Turn click casting off" or "Turn click casting on")
         f.state:SetText(on and "Click casting is on." or "Click casting is off.")
         if on then
-            f.enable.label:SetTextColor(0.75, 0.75, 0.75)
-            f.state:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
+            Skin.Plain(f.enable)
+            f.state:SetTextColor(Skin.ON[1], Skin.ON[2], Skin.ON[3])
         else
-            f.enable.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
+            Skin.Emph(f.enable)
             f.state:SetTextColor(0.75, 0.75, 0.75)
         end
         f.changes:SetText(ChangesText(on))

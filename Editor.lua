@@ -14,10 +14,10 @@ local _, ns = ...
 local ipairs, pairs, type, tostring, pcall = ipairs, pairs, type, tostring, pcall
 local max = math.max
 
-local ACCENT, Clamp, HeldMods, Safe =
-    ns.ACCENT, ns.Clamp, ns.HeldMods, ns.Safe
-local ApplyFont, NewButton, NewText =
-    ns.ApplyFont, ns.NewButton, ns.NewText
+local Skin, Clamp, HeldMods, Safe =
+    ns.Skin, ns.Clamp, ns.HeldMods, ns.Safe
+local ACCENT = Skin.ACCENT
+local NewButton, NewText = ns.NewButton, ns.NewText
 local ACTION_NAME, ActionEntry, ActiveSet, CastConflicts =
     ns.ACTION_NAME, ns.ActionEntry, ns.ActiveSet, ns.CastConflicts
 local Edit, KeyName, CastSettings, CompileBinding =
@@ -50,7 +50,8 @@ local RECIPE_TEXT = {
     blank = "A blank rule (set the conditions yourself)",
 }
 
-local LEFT_W, GAP, TOP = 230, 12, 108           -- the keys pane, the space beside it, where the panes begin
+local LEFT_W, GAP, TOP = 230, 12, 134           -- the keys pane, the space beside it, where the panes begin
+local SWITCH_Y = 106                            -- the line of switches above the panes
 local ROW_H, RULE_H, QUICK_H = 24, 52, 22
 local MACRO_LIMIT = 255
 local ROOM_WARN = 200                           -- the room a key uses is only shown past this
@@ -129,7 +130,7 @@ end
 local function OnOff(button, on)
     button.label:SetText(on and "On" or "Off")
     if on then
-        button.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
+        button.label:SetTextColor(Skin.ON[1], Skin.ON[2], Skin.ON[3])
     else
         button.label:SetTextColor(0.6, 0.6, 0.6)
     end
@@ -225,19 +226,21 @@ local function NewScroll(parent)
         self:SetVerticalScroll(Clamp((self:GetVerticalScroll() or 0) - delta * 40, 0, range))
     end)
     ns.AddScrollBar(scroll, content)
+    -- A sunken area behind the list, there while the list is.
+    local inset = Skin.Inset(parent)
+    inset:SetPoint("TOPLEFT", scroll, "TOPLEFT", -3, 3)
+    inset:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", 9, -3)
+    inset:SetShown(scroll:IsShown() and true or false)
+    if scroll.HookScript then
+        scroll:HookScript("OnShow", function() inset:Show() end)
+        scroll:HookScript("OnHide", function() inset:Hide() end)
+    end
     return scroll, content
 end
 
 local function NewEditBox(parent, w)
-    local box = CreateFrame("EditBox", nil, parent)
-    box:SetSize(w, 20)
-    box:SetAutoFocus(false)
-    box:SetFont(STANDARD_TEXT_FONT, 11, "")
-    box:SetTextInsets(5, 5, 0, 0)
+    local box = Skin.EditBox(parent, w, 20)
     box:SetMaxLetters(60)
-    box.bg = box:CreateTexture(nil, "BACKGROUND")
-    box.bg:SetAllPoints()
-    box.bg:SetColorTexture(0, 0, 0, 0.6)
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     return box
 end
@@ -352,7 +355,7 @@ local function ShowKeyTooltip(row)
             GameTooltip:AddLine(line.text, 1, 1, 1)
         end
     end
-    if binding.hover then GameTooltip:AddLine("Works on any unit under the cursor.", ACCENT[1], ACCENT[2], ACCENT[3]) end
+    if binding.hover then GameTooltip:AddLine("Mouseover casting: also works on units in the world.", ACCENT[1], ACCENT[2], ACCENT[3]) end
     GameTooltip:AddLine("The first rule that fits is the one that fires.", 0.6, 0.6, 0.6)
     GameTooltip:Show()
 end
@@ -461,7 +464,7 @@ local function NewKeyRow(parent, w)
     row:SetSize(w, ROW_H)
     row.sel = row:CreateTexture(nil, "BACKGROUND")
     row.sel:SetAllPoints()
-    row.sel:SetColorTexture(0.10, 0.30, 0.25, 1)
+    Skin.Bar(row.sel, true)
     row.sel:Hide()
     row.key = NewText(row, 11)
     row.key:SetPoint("LEFT", 4, 0)
@@ -559,7 +562,8 @@ local function NewRuleRow(parent, w)
     row.conditions, row.values = {}, {}
     for i, c in ipairs(CONDITIONS) do
         local b = NewButton(row, 60, 20)
-        ApplyFont(b.label, 10)
+        Skin.Font(b.label, 10)
+        Skin.Plain(b)                           -- a font brings its own color
         b:SetScript("OnClick", function(self)
             if not (row.index and editing) then return end
             ShowMenu(self, ConditionItems(c, row.values[c.field]), function(value)
@@ -572,7 +576,7 @@ local function NewRuleRow(parent, w)
     row.always = NewText(row, 10, 0.55, 0.55, 0.55)
     row.always:SetText("Always")
     row.addCond = NewButton(row, 82, 20, "+ condition")
-    ApplyFont(row.addCond.label, 10)
+    Skin.Font(row.addCond.label, 10)
     row.addCond.label:SetTextColor(0.6, 0.6, 0.6)
     row.addCond:SetScript("OnClick", function(self)
         if not (row.index and editing) then return end
@@ -696,7 +700,7 @@ local function NewQuickRow(parent, w)
     row:SetSize(w, QUICK_H)
     row.bg = row:CreateTexture(nil, "BACKGROUND")
     row.bg:SetAllPoints()
-    row.bg:SetColorTexture(0.26, 0.28, 0.31, 1)
+    Skin.Bar(row.bg, false)
     row.bg:Hide()
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetSize(16, 16)
@@ -769,6 +773,107 @@ local function AddRuleMenu(self)
         if ok and not filled then openFirst = at end        -- straight on to choosing its spell
         Say(ok, at)
     end, { width = 250 })
+end
+
+-- The switches that are about click casting as a whole, on a line of their
+-- own above the panes: which unit frames it works on, whether a click casts
+-- as the button goes down, whether a spell cast on an enemy also targets it.
+-- Made outside Build, which has no room for another outer local.
+local SWITCHES = {
+    { id = "blizzard", text = "Game's unit frames",
+      tip = "Click casting works on the game's own party, raid, player, target and pet frames." },
+    { id = "registered", text = "Other addons' frames",
+      tip = "Click casting works on the unit frames of other addons that offer them for it "
+          .. "(ElvUI, Grid2, VuhDo with its Clique support on, and others)." },
+    { id = "down", text = "Cast on press",
+      tip = "A click casts as the button goes down, not when it is let go. A little faster; "
+          .. "a click you start by mistake can no longer be taken back by moving off the frame." },
+    { id = "targetEnemy", text = "Enemy spells also target",
+      tip = "A spell cast on the enemy under the cursor also makes it your target, on every key. "
+          .. "Casting on an ally never changes your target. With this on, a plain left or right click "
+          .. "that works in the world casts on living enemies as well: one click targets and casts." },
+}
+
+local function SwitchOn(settings, id)
+    if id == "blizzard" or id == "registered" then return settings.frames[id] and true or false end
+    return settings[id] and true or false
+end
+
+local function BuildSwitches(f)
+    f.switches = {}
+    local cell = f.w / #SWITCHES
+    for i, switch in ipairs(SWITCHES) do
+        local check = Skin.Check(f)
+        check:SetSize(22, 22)
+        check:SetPoint("TOPLEFT", (i - 1) * cell - 3, -SWITCH_Y)
+        check.id, check.bg = switch.id, false
+        check.text = NewText(f, 10)
+        check.text:SetPoint("LEFT", check, "RIGHT", 1, 0)
+        check.text:SetText(switch.text)
+        check:SetScript("OnClick", function()
+            local settings = CastSettings()
+            if not settings then return end
+            message, confirmDelete = nil, nil
+            local on = not SwitchOn(settings, switch.id)
+            if switch.id == "down" then
+                SetCastDown(on)
+            elseif switch.id == "targetEnemy" then
+                ns.SetCastTargetEnemy(on)
+            else
+                SetCastFrames(switch.id, on)
+            end
+        end)
+        Tip(check, switch.tip)
+        f.switches[i] = check
+    end
+end
+
+local function ShowSwitches(f, settings)
+    for _, check in ipairs(f.switches) do check:SetChecked(SwitchOn(settings, check.id)) end
+end
+
+-- Mouseover (hover) casting for every key it is about at once: keyboard
+-- keys, the wheel and the extra mouse buttons (`ns.KeyboardKeys`). Left,
+-- right and middle click are set one key at a time.
+local MOUSEOVER_TIP = "Mouseover (hover) casting: your keys also cast on characters and nameplates under the cursor, "
+    .. "without targeting them. This sets every keyboard key, the wheel and the extra mouse buttons at once. "
+    .. "Left, right and middle click are set one key at a time: click the key, then \"Works on\"."
+
+local function MouseoverText()
+    local count, anywhere, onTarget = ns.KeyboardKeys()
+    if count == 0 then return "Mouseover casting: no key for it yet", "none" end
+    if anywhere == 0 then return "Mouseover casting: Off", "off" end
+    if anywhere < count or (onTarget > 0 and onTarget < count) then return "Mouseover casting: differs by key", "mixed" end
+    if onTarget == count then return "Mouseover casting: On, else my target", "target" end
+    return "Mouseover casting: On", "on"
+end
+
+local function MouseoverMenu(self)
+    local _, now = MouseoverText()
+    if now == "none" then
+        Say(false, "Mouseover casting needs a keyboard key, the wheel or an extra mouse button in this set. "
+            .. "For left or right click: click the key, then \"Works on\".")
+        return
+    end
+    ShowMenu(self, {
+        { text = "Off: keys cast on unit frames only", value = "off", current = now == "off" },
+        { text = "On: also on units in the world", value = "on", current = now == "on" },
+        { text = "On, and with no unit there on my target", value = "target", current = now == "target" },
+    }, function(value)
+        Say(Edit.SetHoverKeys(value ~= "off", value == "target"), "Your keys are set that way already.")
+    end, { width = 300 })
+end
+
+local function ShowMouseover(f)
+    local text, now = MouseoverText()
+    f.mouseover.label:SetText(text)
+    if now == "on" or now == "target" then
+        f.mouseover.label:SetTextColor(Skin.ON[1], Skin.ON[2], Skin.ON[3])
+    elseif now == "none" then
+        f.mouseover.label:SetTextColor(0.6, 0.6, 0.6)
+    else
+        Skin.Plain(f.mouseover)
+    end
 end
 
 local function Build(parent, w)
@@ -892,22 +997,11 @@ local function Build(parent, w)
         -- Where click casting works, and when a click acts: seldom changed.
         local settings = CastSettings()
         if settings then
-            items[#items + 1] = { text = "On the game's unit frames", value = "blizzard", note = settings.frames.blizzard and "on" or "off" }
-            items[#items + 1] = { text = "On other addons' unit frames", value = "registered", note = settings.frames.registered and "on" or "off" }
-            items[#items + 1] = { text = "Cast on press, not on release", value = "down", note = settings.down and "on" or "off" }
         end
         ShowMenu(self, items, function(value)
             message, confirmDelete = nil, nil
             if value == "sort" then
                 Say(Edit.SortKeys(), "The keys are in that order already.")
-                return
-            end
-            if value == "blizzard" or value == "registered" then
-                SetCastFrames(value, not settings.frames[value])
-                return
-            end
-            if value == "down" then
-                SetCastDown(not settings.down)
                 return
             end
             if value == "onespec" or value == "allspecs" then
@@ -935,8 +1029,7 @@ local function Build(parent, w)
             f.nameBox:SetFocus()
         end, { width = 320 })
     end)
-    Tip(f.more, "Rename, copy, share or delete this set, bring one in from text, give this spec a set of its own, sort the keys. "
-        .. "Also which unit frames click casting works on, and whether a click casts as the button goes down.")
+    Tip(f.more, "Rename, copy, share or delete this set, bring one in from text, give this spec a set of its own, sort the keys.")
 
     -- A text box that takes the place of line 3 while it is needed: a name for
     -- a new set or a copy, the text of an export, or the text to import.
@@ -992,7 +1085,7 @@ local function Build(parent, w)
     f.scopeAsk = false                  -- the notice line is asking "this spec only?"
     f.bannerYes = NewButton(f, 120, 20)
     f.bannerYes:SetPoint("RIGHT", f.bannerNo, "LEFT", -4, 0)
-    f.bannerYes.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
+    f.bannerYes.label:SetTextColor(1, 1, 1)
     f.bannerYes:SetScript("OnClick", function()
         local name = confirmDelete
         if name then
@@ -1147,23 +1240,24 @@ local function Build(parent, w)
         local binding = set and editing and set.bindings[editing]
         if not binding then return end
         ShowMenu(self, {
-            { text = "Unit frames only", value = false, current = not binding.hover },
-            { text = "Any unit under the cursor", value = "hover", current = (binding.hover and not binding.orTarget) and true or false },
-            { text = "Under the cursor, else my target", value = "target", current = (binding.hover and binding.orTarget) and true or false },
-            { text = "Set every hover casting key like this one", value = "all" },
+            { text = "Unit frames", value = false, current = not binding.hover },
+            { text = "Unit frames + units in the world", value = "hover", current = (binding.hover and not binding.orTarget) and true or false },
+            { text = "Unit frames + world, else my target", value = "target", current = (binding.hover and binding.orTarget) and true or false },
+            { text = "Set every mouseover key like this one", value = "all" },
         }, function(value)
             if value == "all" then
                 Say(Edit.SetHoverAll(binding.hover, binding.orTarget), "They are all set like this one already.")
             else
                 Say(Edit.SetHover(editing, value ~= false, value == "target"))
             end
-        end, { width = 270 })
+        end, { width = 290 })
     end)
-    Tip(f.hover, "Hover casting: where this key works. Unit frames only: while the cursor is on a unit frame. "
-        .. "Any unit under the cursor: also on characters in the world and on nameplates. "
+    Tip(f.hover, "Mouseover (hover) casting: where this key works. Unit frames: while the cursor is on a unit frame. "
+        .. "Units in the world: also on characters and nameplates under the cursor, without targeting them. "
         .. "Else my target: with nothing fitting under the cursor the same spells go to your target, so the key is never dead. "
         .. "With either of the last two, ClickLegend takes this key from the game while click casting is on. "
-        .. "Plain left and right click cannot be set this way.")
+        .. "A plain left or right click is different: it is taken only while the cursor is on a friendly player's "
+        .. "character (in combat, on any living friendly unit), and is the game's own click everywhere else.")
     f.problemLines = {}
     f.problems = NewLine(f, rw, 0.95, 0.4, 0.4, function() return f.problemLines end)
     f.problems:SetPoint("BOTTOMLEFT", x0, 20)
@@ -1325,7 +1419,7 @@ local function ShowHint(f, set)
     else
         f.hint:SetText("Click a key on the left to see and change what it does.\n\n"
             .. "The two icons beside a key are what it casts on an ally and on an enemy. "
-            .. "A key named in colour is a hover casting key: it works on any unit under the cursor.\n\n"
+            .. "A key named in gold is a mouseover casting key: it also works on units in the world.\n\n"
             .. "Drag a spell from your spellbook onto a key to put it there.")
     end
 end
@@ -1371,8 +1465,8 @@ local function ShowRules(f, binding)
     f.sentenceLines = Sentence(binding)
     f.sentence:SetText(#f.sentenceLines > 0 and (table.concat(f.sentenceLines, ". ") .. ".") or "This key does nothing yet.")
     f.change.label:SetText(capture == "change" and "Press a key (Esc)" or "Change the key")
-    f.hover.label:SetText(not binding.hover and "Unit frames only"
-        or binding.orTarget and "Under the cursor, else my target" or "Any unit under the cursor")
+    f.hover.label:SetText(not binding.hover and "Works on: unit frames"
+        or binding.orTarget and "Frames + world, else target" or "Works on: frames + world")
     local extras = 0
     for _, what in ipairs(PRE_ORDER) do
         if binding.pre and binding.pre[what] then extras = extras + 1 end
@@ -1427,7 +1521,7 @@ local function ShowRules(f, binding)
                 row.shown = FirstLine(action.text)
                 row.choice.icon:SetTexture(ActionEntry(action).icon)
                 row.choice.icon:Show()
-                row.choice.label:SetTextColor(1, 1, 1)
+                Skin.Plain(row.choice)
             elseif chosen then
                 local entry = ActionEntry(action)
                 local rank = action.pinned and RankText(action.spellID)
@@ -1438,12 +1532,12 @@ local function ShowRules(f, binding)
                     row.shown = "(not known) " .. row.shown     -- in front: the end of a long name is cut off
                     row.choice.label:SetTextColor(0.55, 0.55, 0.55)
                 else
-                    row.choice.label:SetTextColor(1, 1, 1)
+                    Skin.Plain(row.choice)
                 end
             elseif named then
                 row.shown = CHOICE_HINT[action.type]
                 row.choice.icon:Hide()
-                row.choice.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
+                Skin.Emph(row.choice)
             else
                 row.shown = nil
             end
@@ -1495,6 +1589,8 @@ Refresh = function()
         f.writer:Hide()
     end
     if not quick then hovered = nil end
+    ShowMouseover(f)
+    ShowSwitches(f, settings)
 
     OnOff(f.enable, settings.enabled)
     f.undo:SetShown(CanUndo())
@@ -1583,6 +1679,11 @@ local function GetEditor(parent, w)
     if not panel then
         panel = Build(parent, w)
         panel.addRule:SetScript("OnClick", AddRuleMenu)      -- here: Build has no room for another outer local
+        panel.mouseover = NewButton(panel, 250, 20)
+        panel.mouseover:SetPoint("TOPLEFT", 150, 0)
+        panel.mouseover:SetScript("OnClick", MouseoverMenu)
+        Tip(panel.mouseover, MOUSEOVER_TIP)
+        BuildSwitches(panel)
         panel:SetAllPoints(parent)
     end
     return panel

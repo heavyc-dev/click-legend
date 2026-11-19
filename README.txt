@@ -60,14 +60,27 @@ Click casting of its own (optional, off until you switch it on)
   - Quickbind: lists your spells. Point at one and press a key or a mouse
     button, with Shift, Ctrl or Alt if you like, and the spell is on that
     key: on allies, on enemies or on dead allies, whichever the spell is for.
-  - A key that works anywhere can go on to your target ("Under the cursor,
-    else my target"): with nothing fitting under the cursor the same spells
-    are cast on your target, so the key is never dead.
-  - A key can work on any unit under the cursor, not only on unit frames:
-    characters in the world and nameplates too. Edit the key and pick
-    "Any unit under the cursor". ClickLegend then has that key all the
-    time while its click casting is on, so use one you need for nothing
-    else. Plain left and right click cannot be set this way.
+  - Mouseover (hover) casting: a key can work on units in the world too,
+    not only on unit frames: characters and nameplates under the cursor.
+    The row "Mouseover casting" at the top of the Bindings tab sets every
+    keyboard key, the wheel and the extra mouse buttons at once: Off, On,
+    or On and else my target. One key at a time: click the key, then
+    "Works on". ClickLegend then has that key all the time while its click
+    casting is on, so use one you need for nothing else.
+  - "Else my target": with nothing fitting under the cursor the same
+    spells are cast on your target, so the key is never dead.
+  - Plain left and right click can be mouseover keys too, one key at a
+    time. They are taken only while the cursor is on a friendly player's
+    character in the world, so that you can heal or buff someone by
+    clicking them; everywhere else they turn the camera, select, loot and
+    talk as always. In combat the game cannot tell a player from a
+    friendly NPC, so a friendly NPC takes the click as well then.
+  - "Enemy spells also target" (a check box above the keys, on unless
+    you switch it off): a spell cast on the enemy under the cursor also
+    makes it your target, on every key. With
+    it on, a plain left or right click that works in the world casts on
+    living enemies as well: one click targets and casts. Casting on an
+    ally never changes your target.
   - Each key has rules, tried from the top; the first that fits is cast.
     Example on one key: dead ally = resurrection, ally = heal, enemy = damage.
   - Conditions: ally or enemy, alive or dead, in or out of combat, your
@@ -96,13 +109,12 @@ Click casting of its own (optional, off until you switch it on)
   - Sets are shared by all your characters. Each character picks its set,
     and a spec can have a set of its own (More..., Use this set for this
     spec only).
-  - Guided setup, hover casting: unit frames only, any unit under the
-    cursor, or under the cursor and else your target. It covers keyboard
+  - Guided setup, mouseover casting: off (unit frames only), on (also
+    units in the world), or on and else your target. It covers keyboard
     keys, the wheel and extra mouse buttons (the fourth and up); left,
-    right and middle click stay on unit frames. The step comes after your
-    keys, and only when you have a key it is about. In the editor, a
-    key's hover button can set every hover casting key like that one.
-  - A wheel key that works on any unit under the cursor is ClickLegend's
+    right and middle click are set one key at a time in the editor. The
+    step comes after your keys, and only when you have a key it is about.
+  - A wheel key that also works on units in the world is ClickLegend's
     only while a unit is there. The rest of the time the wheel zooms the
     camera as usual. Not with "else my target": there it casts.
   - Guided setup, your buttons: switch on the buttons you want to set up
@@ -198,6 +210,8 @@ Commands
                                 and right click "Menu" (they keep working)
   /clg npc                      hide the legend while the cursor is on a
                                 friendly NPC in the world, or not
+  /clg unlearned                hide or show bindings whose spell you have
+                                not learned yet
   /clg hoverdim                 toggle dimming of the row that does not apply
   /clg missing                  toggle greying of bindings that cannot fire
   /clg usable                   toggle marking spells you cannot cast now
@@ -228,6 +242,8 @@ Commands
   /clg labelstyle text | icon   text labels, or mouse icons for mouse buttons
   /clg labelsize <7-14>         label size
   /clg bg                       toggle the background
+  /clg border none | tooltip | dialog
+                                the game's own frame around the legend
   /clg bgcolor <RRGGBB>         background color, e.g. /clg bgcolor 101418
   /clg bgalpha <0-1>            background opacity
   /clg pad <0-20>               background padding

@@ -77,7 +77,8 @@ local DEFAULTS = {
     hideBasics = false,         -- leave the plain left click "Target" and right click "Menu" out of the legend
     hideNPC = false,            -- no legend while the cursor is on a friendly NPC in the world
     hoverDim = true,            -- dim the row that does not apply to the hovered unit
-    flagMissing = true,         -- grey out bindings whose spell or macro is gone
+    hideMissing = true,         -- leave bindings that cannot fire (spell not learned, macro gone) out of the legend
+    flagMissing = true,         -- grey them out instead, when they are shown
     flagUnusable = true,        -- mark spells that cannot be cast right now
     offStyle = "dim",           -- dim | hide: what happens to spells that do not apply to the hovered unit
     flash = true,               -- an icon flashes when its spell is cast
@@ -92,6 +93,7 @@ local DEFAULTS = {
     manaR = 0.4, manaG = 0.5, manaB = 1,
     coolR = 0.6, coolG = 0.6, coolB = 0.6,
     background = false, bgR = 0.04, bgG = 0.04, bgB = 0.04, bgA = 0.6, bgPadding = 4,
+    border = "none",            -- none | tooltip | dialog: the game's own frame around the legend
     tooltip = true, tooltipWorld = false,
     layout = "horizontal",      -- horizontal | vertical | mouse
     mouseSize = 128,            -- the mouse picture's width and height, for the "mouse" layout
@@ -129,6 +131,7 @@ local CHOICES = {
     source = { auto = true, own = true, eui = true, clique = true, vuhdo = true, healbot = true, blizzard = true },
     anchor = { screen = true, party = true, cursor = true },
     offStyle = { dim = true, hide = true },
+    border = { none = true, tooltip = true, dialog = true },
     anchorSide = { above = true, below = true, left = true, right = true },
     labelStyle = { text = true, icon = true, corner = true },
 }

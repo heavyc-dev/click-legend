@@ -19,6 +19,7 @@ Provider.lua
 Display.lua
 Tooltip.lua
 Options.lua
+Skin.lua
 Window.lua
 Picker.lua
 Editor.lua

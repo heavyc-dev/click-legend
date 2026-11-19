@@ -116,7 +116,7 @@ end
 --  The plan: what the active set asks for, the same on every frame.
 --  plan[i] = { prefix = "shift-", button = 1, text = macro text }     mouse buttons
 --  keys[i] = { key = "SHIFT-F", text = macro text }      keyboard keys and the wheel
---  hover[i] = { key = "SHIFT-F", text = macro text, zoom = true or nil }
+--  hover[i] = { key = "SHIFT-F", text = macro text, zoom = true or nil, soft = true or nil }
 --                                                        keys that work anywhere
 --  A key set to work anywhere is bound all the time, not only while the
 --  cursor is on a unit frame. A mouse button set so is in `hover` and in
@@ -179,7 +179,10 @@ local function BuildPlan()
                 WarnOnce("this game client cannot bind keys to work anywhere; those keys work on unit frames only.")
                 anywhere = false
             end
-            if anywhere then hover[#hover + 1] = { key = mods .. key, text = text, zoom = compiled.zoom } end
+            if anywhere then
+                hover[#hover + 1] = { key = mods .. key, text = text, zoom = compiled.zoom, soft = compiled.soft,
+                                      enemy = compiled.softEnemy }
+            end
             if text and button then
                 plan[#plan + 1] = { prefix = prefix, button = button, text = text,
                     any = (prefix == "" and API.UsesExtraModifier(binding)) or nil }
@@ -366,18 +369,118 @@ local hoverBound = ""
 local MOUSEOVER_STATE = "[@mouseover,exists] 1; 0"
 local driverOn = false
 
+-- A plain left or right click that works in the world (`soft`) must be the
+-- game's own click nearly all the time: it turns the camera, selects, loots
+-- and talks to a vendor. It is held only while the cursor is on a friendly
+-- player's character in the world. Out of combat this file watches for that
+-- itself, since only ordinary code can tell a player from an NPC. In combat
+-- ordinary code may not bind anything, so a second state driver takes over:
+-- it can only ask for a living friendly unit, which lets friendly NPCs in.
+-- Its last answer, out of combat, leaves the key alone.
+-- A soft key whose enemy spells also target the enemy (`enemy`) is taken
+-- over a living enemy as well: there the click still targets, and casts.
+local SOFT_STATE = "[combat,@mouseover,help,nodead] 1; [combat,@mouseover,harm,nodead] 3; [combat] 0; 2"
+local softDriverOn = false
+local softKeys = {}                 -- { key = "BUTTON1", button = "clgh3", enemy = true or nil }
+local softHeld = false
+local softWatch, softElapsed = nil, 0
+
+local function Plain(value) return not (issecretvalue and issecretvalue(value)) end
+
+-- What the cursor is on in the world, as far as a soft key cares: "ally" (a
+-- friendly player's character), "enemy" (something alive that can be
+-- attacked) or false.
+local function SoftWanted()
+    if not (UnitExists and UnitIsPlayer and UnitCanAttack) then return false end
+    local ok, exists = pcall(UnitExists, "mouseover")
+    if not (ok and Plain(exists) and exists) then return false end
+    local ok2, isPlayer = pcall(UnitIsPlayer, "mouseover")
+    local ok3, hostile = pcall(UnitCanAttack, "player", "mouseover")
+    if not (ok2 and ok3 and Plain(isPlayer) and Plain(hostile)) then return false end
+    local what = "ally"
+    if hostile then
+        -- A dead enemy is something to loot: that click stays the game's.
+        local ok4, dead = false, nil
+        if UnitIsDeadOrGhost then ok4, dead = pcall(UnitIsDeadOrGhost, "mouseover") end
+        if not (ok4 and Plain(dead)) or dead then return false end
+        what = "enemy"
+    elseif not isPlayer then
+        return false
+    end
+    local focus
+    if GetMouseFoci then
+        local okf, foci = pcall(GetMouseFoci)
+        focus = okf and type(foci) == "table" and foci[1] or nil
+    elseif GetMouseFocus then
+        local okf, f = pcall(GetMouseFocus)
+        focus = okf and f or nil
+    end
+    return (focus == nil or focus == WorldFrame) and what or false
+end
+
+local function SoftApply(force)
+    if #softKeys == 0 or (InCombatLockdown and InCombatLockdown()) then return end
+    local want = SoftWanted()
+    if want == softHeld and not force then return end
+    softHeld = want
+    for _, k in ipairs(softKeys) do
+        if want == "ally" or (want == "enemy" and k.enemy) then
+            SetOverrideBindingClick(header, true, k.key, "ClickLegendCastKeys", k.button)
+        else
+            SetOverrideBinding(header, true, k.key, nil)
+        end
+    end
+end
+
+-- Watches the cursor while there is a soft key, and not otherwise.
+local function SoftWatch(on)
+    if not softWatch then
+        if not on then return end
+        softWatch = CreateFrame("Frame")
+        softWatch:SetScript("OnEvent", function(_, event) API.Safe(SoftApply, event == "PLAYER_REGEN_ENABLED") end)
+    end
+    if on then
+        pcall(softWatch.RegisterEvent, softWatch, "UPDATE_MOUSEOVER_UNIT")
+        pcall(softWatch.RegisterEvent, softWatch, "PLAYER_REGEN_ENABLED")
+        -- No event says the cursor left a unit.
+        softWatch:SetScript("OnUpdate", function(_, dt)
+            softElapsed = softElapsed + (dt or 0)
+            if softElapsed < 0.1 then return end
+            softElapsed = 0
+            API.Safe(SoftApply, false)
+        end)
+    else
+        softWatch:UnregisterAllEvents()
+        softWatch:SetScript("OnUpdate", nil)
+    end
+end
+
 local function SyncHover(hover)
     local canWatch = RegisterStateDriver ~= nil and header.Execute ~= nil
+    local canSoft = canWatch and SetOverrideBinding ~= nil
     local parts = {}
-    for i, k in ipairs(hover) do parts[i] = k.key .. ((k.zoom and canWatch) and "~" or "") end
+    for i, k in ipairs(hover) do
+        parts[i] = k.key .. ((k.soft and (k.enemy and "^!" or "^")) or ((k.zoom and canWatch) and "~") or "")
+    end
     local signature = table.concat(parts, " ")
     if signature == hoverBound then return end
     hoverBound = ""
     if not (SetOverrideBindingClick and ClearOverrideBindings) then return end
     ClearOverrideBindings(header)
-    local take, drop = {}, {}
+    softHeld = false
+    local take, drop, softTake, softDrop, softEnemy = {}, {}, {}, {}, {}
+    softKeys = {}
     for i, k in ipairs(hover) do
-        if k.zoom and canWatch then
+        if k.soft then
+            -- Without the means to hold it part of the time it stays a unit-frame key.
+            if canSoft then
+                softKeys[#softKeys + 1] = { key = k.key, button = "clgh" .. i, enemy = k.enemy }
+                softTake[#softTake + 1] = ("self:SetBindingClick(true, %q, %q, %q)"):format(k.key, "ClickLegendCastKeys", "clgh" .. i)
+                softDrop[#softDrop + 1] = ("self:ClearBinding(%q)"):format(k.key)
+                -- Over an enemy: taken when the key is for enemies too, let go when not.
+                softEnemy[#softEnemy + 1] = k.enemy and softTake[#softTake] or softDrop[#softDrop]
+            end
+        elseif k.zoom and canWatch then
             take[#take + 1] = ("self:SetBindingClick(true, %q, %q, %q)"):format(k.key, "ClickLegendCastKeys", "clgh" .. i)
             drop[#drop + 1] = ("self:ClearBinding(%q)"):format(k.key)
         else
@@ -395,6 +498,18 @@ local function SyncHover(hover)
         local over = SecureCmdOptionParse and SecureCmdOptionParse(MOUSEOVER_STATE)
         if #take > 0 and (over == "1" or over == 1) then header:Execute(takeText) end
     end
+    if canSoft and (#softKeys > 0 or softDriverOn) then
+        header:SetAttribute("_onstate-clgsoft",
+            ("if newstate == 1 or newstate == \"1\" then\n%s\nelseif newstate == 3 or newstate == \"3\" then\n%s\n"
+                .. "elseif newstate == 0 or newstate == \"0\" then\n%s\nend")
+                :format(table.concat(softTake, "\n"), table.concat(softEnemy, "\n"), table.concat(softDrop, "\n")))
+        if #softKeys > 0 and not softDriverOn then
+            RegisterStateDriver(header, "clgsoft", SOFT_STATE)
+            softDriverOn = true
+        end
+    end
+    SoftWatch(#softKeys > 0)
+    SoftApply(true)
     hoverBound = signature
 end
 

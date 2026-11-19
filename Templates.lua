@@ -30,8 +30,25 @@
 --    * Each kind of dispel has a key of its own. A dispel casts even when
 --      there is nothing to remove, so two on one key would never reach the
 --      second.
+--    * A healer's dispels are on the mouse wheel, up and down, over a unit
+--      frame: the wheel does nothing there in the game, it is the fastest
+--      thing to reach, and a turn of it by mistake costs a little mana and
+--      nothing else. That is also why nothing with a cooldown, and nothing
+--      that changes a fight (a protection, a resurrection), is put on it.
+--    * Shift and Ctrl with the middle button carry the buffs and the rarely
+--      used spells.
+--    * A healer's plain left and right click also work on players in the
+--      world (`world = true`): a click on a friendly player's character
+--      heals them, in the group or not. The provider takes such a click
+--      only there, so everything else in the world is clicked as always.
+--      Only the healer sets do this, and neither key has a spell for an
+--      enemy, so a click on an enemy is always the game's own.
+--    * The spells are the ones a level 60 character of this client can learn
+--      (its trainer lists were read on 2026-11-19). A few spells that only
+--      this client has are not named here: their names are not known.
 --
---  A key is { "KEY", rule, rule, ... } and a rule is "conditions=action":
+--  A key is { "KEY", rule, rule, ..., world = true or nil } and a rule is
+--  "conditions=action":
 --    conditions: help | harm | dead | alive | combat | nocombat | pet | nopet
 --                | form1..form6 | shift | ctrl | alt     (none: anyone, any time)
 --    action:     a spell name, or @target @focus @assist @menu @trinket1 @trinket2
@@ -48,13 +65,16 @@ local MENU_KEY = { "ALT-BUTTON2", "=@menu" }
 
 local TEMPLATES = {
     { class = "PRIEST", name = "Priest: healer", keys = {
-        { "BUTTON1", "help dead=Resurrection", "help=Flash Heal", "help=Heal", "help=Lesser Heal", "=@target" },
-        { "BUTTON2", "help=Greater Heal", "help=Heal", "help=Lesser Heal", "=@menu" },
+        { "BUTTON1", "help dead=Resurrection", "help=Flash Heal", "help=Heal", "help=Lesser Heal", "=@target", world = true },
+        { "BUTTON2", "help=Greater Heal", "help=Heal", "help=Lesser Heal", "=@menu", world = true },
         { "BUTTON3", "help=Renew", "harm=Shadow Word: Pain" },
+        { "MOUSEWHEELUP", "=Dispel Magic" },
+        { "MOUSEWHEELDOWN", "help=Abolish Disease", "help=Cure Disease" },
         { "SHIFT-BUTTON1", "help=Power Word: Shield", "harm=Smite" },
-        { "SHIFT-BUTTON2", "=Dispel Magic" },
-        { "CTRL-BUTTON1", "help=Abolish Disease", "help=Cure Disease", "harm=Mind Blast" },
-        { "CTRL-BUTTON2", "help=Power Word: Fortitude", "harm=Shackle Undead" },
+        { "SHIFT-BUTTON2", "help=Power Word: Fortitude", "harm=Mind Blast" },
+        { "SHIFT-BUTTON3", "help=Fear Ward", "harm=Mana Burn" },
+        { "CTRL-BUTTON1", "help=Divine Spirit", "harm=Shackle Undead" },
+        { "CTRL-BUTTON2", "help=Shadow Protection", "harm=Mind Soothe" },
         TARGET_KEY, MENU_KEY,
     } },
     { class = "PRIEST", name = "Priest: shadow", keys = {
@@ -63,18 +83,20 @@ local TEMPLATES = {
         { "BUTTON3", "harm=Mind Flay", "harm=Smite", "help=Renew" },
         { "SHIFT-BUTTON1", "harm=Mind Blast", "help=Abolish Disease", "help=Cure Disease" },
         { "SHIFT-BUTTON2", "=Dispel Magic" },
+        { "SHIFT-BUTTON3", "harm=Mana Burn", "help=Fear Ward" },
         { "CTRL-BUTTON1", "harm=Shadow Word: Pain", "help=Power Word: Fortitude" },
         { "CTRL-BUTTON2", "harm=Silence" },
         TARGET_KEY, MENU_KEY,
     } },
     { class = "PALADIN", name = "Paladin: healer", keys = {
-        { "BUTTON1", "help dead=Redemption", "help=Flash of Light", "help=Holy Light", "=@target" },
-        { "BUTTON2", "help=Holy Light", "=@menu" },
-        { "BUTTON3", "help=Cleanse", "help=Purify", "harm=Hammer of Justice" },
+        { "BUTTON1", "help dead=Redemption", "help=Flash of Light", "help=Holy Light", "=@target", world = true },
+        { "BUTTON2", "help=Holy Light", "=@menu", world = true },
+        { "BUTTON3", "help=Blessing of Freedom", "harm=Hammer of Justice" },
+        { "MOUSEWHEELUP", "help=Cleanse", "help=Purify" },
         { "SHIFT-BUTTON1", "=Holy Shock" },
         { "SHIFT-BUTTON2", "help=Blessing of Protection", "harm=Judgement" },
+        { "SHIFT-BUTTON3", "help=Blessing of Sacrifice" },
         { "CTRL-BUTTON1", "help=Lay on Hands", "harm=Hammer of Wrath" },
-        { "CTRL-BUTTON2", "help=Blessing of Freedom" },
         TARGET_KEY, MENU_KEY,
     } },
     { class = "PALADIN", name = "Paladin: tank or retribution", keys = {
@@ -87,13 +109,16 @@ local TEMPLATES = {
         TARGET_KEY, MENU_KEY,
     } },
     { class = "DRUID", name = "Druid: healer", keys = {
-        { "BUTTON1", "help dead nocombat=Revive", "help dead nocombat=Rebirth", "help=Healing Touch", "=@target" },
-        { "BUTTON2", "help=Regrowth", "help=Healing Touch", "=@menu" },
+        { "BUTTON1", "help dead nocombat=Revive", "help dead nocombat=Rebirth", "help=Healing Touch", "=@target", world = true },
+        { "BUTTON2", "help=Regrowth", "help=Healing Touch", "=@menu", world = true },
         { "BUTTON3", "help=Rejuvenation", "harm=Moonfire" },
+        { "MOUSEWHEELUP", "help=Remove Curse" },
+        { "MOUSEWHEELDOWN", "help=Abolish Poison", "help=Cure Poison" },
         { "SHIFT-BUTTON1", "help=Swiftmend", "harm=Wrath" },
-        { "SHIFT-BUTTON2", "help=Remove Curse", "harm=Entangling Roots" },
-        { "CTRL-BUTTON1", "help=Abolish Poison", "help=Cure Poison", "harm=Faerie Fire" },
-        { "CTRL-BUTTON2", "help dead=Rebirth", "help=Innervate", "harm=Hibernate" },
+        { "SHIFT-BUTTON2", "help=Mark of the Wild", "harm=Entangling Roots" },
+        { "SHIFT-BUTTON3", "help=Thorns", "harm=Faerie Fire" },
+        { "CTRL-BUTTON1", "help=Innervate", "harm=Hibernate" },
+        { "CTRL-BUTTON2", "help dead=Rebirth" },
         TARGET_KEY, MENU_KEY,
     } },
     { class = "DRUID", name = "Druid: feral or balance", keys = {
@@ -106,12 +131,16 @@ local TEMPLATES = {
         { "CTRL-BUTTON2", "help dead=Rebirth", "harm=Hibernate" },
         TARGET_KEY, MENU_KEY,
     } },
+    -- A shaman has nothing more to cast on an ally than heals, the two cures
+    -- and the water spells, so Ctrl is for enemies only.
     { class = "SHAMAN", name = "Shaman: healer", keys = {
-        { "BUTTON1", "help dead=Ancestral Spirit", "help=Lesser Healing Wave", "help=Healing Wave", "=@target" },
-        { "BUTTON2", "help=Healing Wave", "=@menu" },
+        { "BUTTON1", "help dead=Ancestral Spirit", "help=Lesser Healing Wave", "help=Healing Wave", "=@target", world = true },
+        { "BUTTON2", "help=Healing Wave", "=@menu", world = true },
         { "BUTTON3", "help=Chain Heal", "help=Healing Wave", "harm=Earth Shock" },
-        { "SHIFT-BUTTON1", "help=Cure Poison", "harm=Purge" },
-        { "SHIFT-BUTTON2", "help=Cure Disease", "harm=Flame Shock" },
+        { "MOUSEWHEELUP", "help=Cure Poison" },
+        { "MOUSEWHEELDOWN", "help=Cure Disease" },
+        { "SHIFT-BUTTON1", "help=Water Breathing", "harm=Purge" },
+        { "SHIFT-BUTTON2", "help=Water Walking", "harm=Flame Shock" },
         { "CTRL-BUTTON1", "harm=Lightning Bolt" },
         { "CTRL-BUTTON2", "harm=Frost Shock" },
         TARGET_KEY, MENU_KEY,
@@ -132,7 +161,8 @@ local TEMPLATES = {
         { "BUTTON3", "harm=Polymorph", "help=Remove Lesser Curse" },
         { "SHIFT-BUTTON1", "harm=Counterspell", "help=Arcane Intellect" },
         { "SHIFT-BUTTON2", "harm=Frostbolt", "harm=Fireball" },
-        { "CTRL-BUTTON1", "harm=Fire Blast" },
+        { "CTRL-BUTTON1", "harm=Fire Blast", "help=Dampen Magic" },
+        { "CTRL-BUTTON2", "help=Amplify Magic" },
     } },
     { class = "WARLOCK", name = "Warlock", keys = {
         { "BUTTON3", "harm=Corruption", "help=Unending Breath" },
@@ -155,7 +185,7 @@ local TEMPLATES = {
     { class = "WARRIOR", name = "Warrior", keys = {
         { "BUTTON3", "harm form1=Charge", "harm form3=Intercept", "harm form2=Taunt" },
         { "SHIFT-BUTTON1", "harm form3=Pummel", "harm=Shield Bash" },
-        { "SHIFT-BUTTON2", "harm form2=Taunt", "harm form1=Mocking Blow" },
+        { "SHIFT-BUTTON2", "harm form2=Disarm", "harm form1=Mocking Blow" },
         { "CTRL-BUTTON1", "harm=Sunder Armor" },
         { "CTRL-BUTTON2", "harm=Hamstring" },
         { "ALT-BUTTON1", "harm=Rend" },
@@ -204,7 +234,8 @@ local function BuildTemplate(template)
             local rule = type(key[i]) == "string" and BuildRule(key[i])
             if rule then rules[#rules + 1] = rule end
         end
-        bindings[#bindings + 1] = { key = key[1], rules = rules }
+        -- `world`: the key also works on units in the world (mouseover casting).
+        bindings[#bindings + 1] = { key = key[1], rules = rules, hover = key.world and true or nil }
     end
     return { version = 1, bindings = bindings }
 end

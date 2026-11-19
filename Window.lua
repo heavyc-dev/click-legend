@@ -13,10 +13,10 @@ local activeSource
 ns.Subscribe("db", function(value) db = value end)
 ns.Subscribe("source", function(value) activeSource = value end)
 
-local Clamp, LongKey, Report, Safe, AllBoundKeys, ACCENT =
-    ns.Clamp, ns.LongKey, ns.Report, ns.Safe, ns.AllBoundKeys, ns.ACCENT
-local ApplyFont, Refresh, ResolveFont =
-    ns.ApplyFont, ns.Refresh, ns.ResolveFont
+local Clamp, LongKey, Report, Safe, AllBoundKeys =
+    ns.Clamp, ns.LongKey, ns.Report, ns.Safe, ns.AllBoundKeys
+local Refresh, ResolveFont, Skin = ns.Refresh, ns.ResolveFont, ns.Skin
+local ACCENT = Skin.ACCENT
 local ExportSettings, GetColor, ImportSettings, OPTIONS =
     ns.ExportSettings, ns.GetColor, ns.ImportSettings, ns.OPTIONS
 local OptGet, OptSet, PAGES, PANEL_PAGES =
@@ -26,8 +26,9 @@ local ResetSettings, SetColor, SetCustomPosition =
     ns.ResetSettings, ns.SetColor, ns.SetCustomPosition
 
 -------------------------------------------------------------------------------
---  The addon's own settings window. Built from plain frames and textures (no
---  templates), so it works on any client, with or without EllesmereUI.
+--  The addon's own settings window. Its look comes from Skin.lua: the game's
+--  own panel, buttons and tabs, or plain frames on a client without them. It
+--  works with or without EllesmereUI.
 -------------------------------------------------------------------------------
 local window                    -- created on first open
 local ToggleWindow, RefreshWindow, OpenShareTab, OpenBindingsTab
@@ -40,14 +41,18 @@ end
 local function GetEditor(parent, width) return ns.GetEditor(parent, width) end     -- Editor.lua
 local function RefreshEditor() ns.RefreshEditor() end                              -- Editor.lua
 
-local WIN_W, WIN_H, ROW_H, WIN_PAD = 400, 520, 26, 16
+-- One width for every tab: what the Bindings tab needs (keys on the left, a
+-- key's rules on the right). A settings row is as wide as the list.
+local WIN_W, WIN_H, ROW_H, WIN_PAD = 680, 520, 26, 16
+local ROW_W = WIN_W - WIN_PAD * 2
+local TOP = 50                      -- where a tab's contents begin, under the title bar and the "showing ..." line
 local resetAsked = false            -- "Reset to defaults" was clicked once and waits for the second click
 
 -- A thin bar beside a scroll area: how far down it is, and a thumb to drag.
 -- Not there while everything fits. It stands just outside the area's right
 -- edge, so nothing in the area has to move for it. Returns the function
 -- that brings it up to date; the bar also follows the area by itself.
-local BAR_W, BAR_GAP, THUMB_MIN = 3, 4, 16
+local BAR_W, BAR_GAP, THUMB_MIN = 5, 4, 20
 function ns.AddScrollBar(scroll, content)
     local bar = CreateFrame("Frame", nil, scroll)
     bar:SetPoint("TOPLEFT", scroll, "TOPRIGHT", BAR_GAP, 0)
@@ -55,14 +60,14 @@ function ns.AddScrollBar(scroll, content)
     bar:SetWidth(BAR_W)
     local track = bar:CreateTexture(nil, "BACKGROUND")
     track:SetAllPoints()
-    track:SetColorTexture(1, 1, 1, 0.06)
+    track:SetColorTexture(0, 0, 0, 0.45)
     local thumb = CreateFrame("Button", nil, bar)
     thumb:SetWidth(BAR_W + 4)                   -- a little wider than it looks: easier to catch
     local face = thumb:CreateTexture(nil, "ARTWORK")
     face:SetPoint("TOP")
     face:SetPoint("BOTTOM")
     face:SetWidth(BAR_W)
-    face:SetColorTexture(1, 1, 1, 0.35)
+    face:SetColorTexture(0.75, 0.68, 0.45, 0.9)
 
     -- The height on view, how far the content can move, the thumb's height.
     local function Measure()
@@ -107,7 +112,6 @@ function ns.AddScrollBar(scroll, content)
     bar:Hide()
     return Follow
 end
-local WIN_BIND_W = 680              -- the Bindings tab is wider: keys on the left, a key's rules on the right
 local activeTab = nil               -- chosen when the window first opens (FirstTab)
 local function ShowMenu(...) return ns.ShowMenu(...) end                           -- Picker.lua
 
@@ -121,24 +125,12 @@ end
 
 local function NewText(parent, size, r, g, b)
     local fs = parent:CreateFontString(nil, "OVERLAY")
-    ApplyFont(fs, size)
+    Skin.Font(fs, size)
     fs:SetTextColor(r or 1, g or 1, b or 1)
     return fs
 end
 
-local function NewButton(parent, w, h, text)
-    local b = CreateFrame("Button", nil, parent)
-    b:SetSize(w, h)
-    b.bg = b:CreateTexture(nil, "BACKGROUND")
-    b.bg:SetAllPoints()
-    b.bg:SetColorTexture(0.16, 0.17, 0.19, 1)
-    b.label = NewText(b, 11)
-    b.label:SetPoint("CENTER")
-    b.label:SetText(text or "")
-    b:SetScript("OnEnter", function(self) self.bg:SetColorTexture(0.26, 0.28, 0.31, 1) end)
-    b:SetScript("OnLeave", function(self) self.bg:SetColorTexture(0.16, 0.17, 0.19, 1) end)
-    return b
-end
+local NewButton = Skin.Button
 
 -- The game's color picker, in its current form and the older one.
 local function OpenColorPicker(r, g, b, a, hasAlpha, onChange)
@@ -191,7 +183,7 @@ end
 -- One row of the window for one option. row.Update redraws its value.
 local function NewOptionRow(parent, o)
     local row = CreateFrame("Frame", nil, parent)
-    row:SetSize(WIN_W - WIN_PAD * 2, ROW_H)
+    row:SetSize(ROW_W, ROW_H)
     row.when = o.when or false          -- shown only while this says so: a setting that does nothing now is left out
     if o.header then
         local text = NewText(row, 11, ACCENT[1], ACCENT[2], ACCENT[3])
@@ -206,22 +198,15 @@ local function NewOptionRow(parent, o)
     AttachTip(row, o.tip)
 
     if o.kind == "toggle" then
-        local b = NewButton(row, 46, 20)
-        b:SetPoint("RIGHT")
+        local b = Skin.Check(row)
+        b:SetPoint("RIGHT", 2, 0)
         b:SetScript("OnClick", function() OptSet(o, not OptGet(o)) end)
-        row.Update = function()
-            local on = OptGet(o)
-            b.label:SetText(on and "On" or "Off")
-            if on then
-                b.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
-            else
-                b.label:SetTextColor(0.6, 0.6, 0.6)
-            end
-        end
+        row.Update = function() b:SetChecked(OptGet(o) and true or false) end
     elseif o.kind == "choice" then
         -- A click lists the choices to pick from.
-        local b = NewButton(row, 160, 20)
+        local b = NewButton(row, 180, 20)
         b:SetPoint("RIGHT")
+        Skin.Arrow(b)
         b:SetScript("OnClick", function(self)
             local items = {}
             for i, value in ipairs(o.order) do
@@ -246,7 +231,27 @@ local function NewOptionRow(parent, o)
         end
         plus:SetScript("OnClick", function() Step(1) end)
         minus:SetScript("OnClick", function() Step(-1) end)
-        row.Update = function() value:SetText(FormatNumber(o, db[o.key])) end
+        -- The game's slider beside them, to drag. Setting it from here must
+        -- not come back as a change (`setting`).
+        local slider, setting = Skin.Slider(row, 150), false
+        if slider then
+            slider:SetPoint("RIGHT", minus, "LEFT", -10, 0)
+            slider:SetMinMaxValues(o.lo, o.hi)
+            slider:SetValueStep(o.step)
+            slider:SetScript("OnValueChanged", function(_, v)
+                if setting or type(v) ~= "number" then return end
+                v = Clamp(floor(v / o.step + 0.5) * o.step, o.lo, o.hi)
+                if v ~= db[o.key] then OptSet(o, v) end
+            end)
+        end
+        row.Update = function()
+            value:SetText(FormatNumber(o, db[o.key]))
+            if slider then
+                setting = true
+                slider:SetValue(db[o.key])
+                setting = false
+            end
+        end
     elseif o.kind == "color" then
         local b = NewButton(row, 46, 20)
         b:SetPoint("RIGHT")
@@ -273,7 +278,7 @@ end
 -- One row per bound key on the Order tab, with Up and Down to move it.
 local function NewOrderRow(parent)
     local row = CreateFrame("Frame", nil, parent)
-    row:SetSize(WIN_W - WIN_PAD * 2, ROW_H)
+    row:SetSize(ROW_W, ROW_H)
     row.label = NewText(row, 12)
     row.label:SetPoint("LEFT")
     row.down = NewButton(row, 46, 20, "Down")
@@ -293,7 +298,7 @@ end
 
 local function BuildWindow()
     ResolveFont()
-    local f = CreateFrame("Frame", "ClickLegendOptions", UIParent)
+    local f = Skin.Panel("ClickLegendOptions", UIParent, "ClickLegend")
     f:SetSize(WIN_W, WIN_H)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
@@ -308,32 +313,20 @@ local function BuildWindow()
         UISpecialFrames[#UISpecialFrames + 1] = "ClickLegendOptions"      -- Escape closes it
     end
 
-    local edge = f:CreateTexture(nil, "BACKGROUND")
-    edge:SetAllPoints()
-    edge:SetColorTexture(0, 0, 0, 1)
-    local fill = f:CreateTexture(nil, "BORDER")
-    fill:SetPoint("TOPLEFT", 1, -1)
-    fill:SetPoint("BOTTOMRIGHT", -1, 1)
-    fill:SetColorTexture(0.07, 0.08, 0.09, 0.97)
-
-    local title = NewText(f, 14)
-    title:SetPoint("TOPLEFT", WIN_PAD, -12)
-    title:SetText("ClickLegend")
     f.source = NewText(f, 10, 0.6, 0.6, 0.6)
-    f.source:SetPoint("LEFT", title, "RIGHT", 10, 0)
+    f.source:SetPoint("TOPLEFT", WIN_PAD, -30)
 
-    local close = NewButton(f, 22, 22, "X")
-    close:SetPoint("TOPRIGHT", -8, -8)
-    close:SetScript("OnClick", function() f:Hide(); CloseOverlays() end)
+    Skin.Close(f, function() f:Hide(); CloseOverlays() end)
     f:SetScript("OnHide", function()                 -- Escape closes the window too
         CloseOverlays()
         ns.Render()                                  -- an empty legend is only shown while this is open
     end)
 
+    -- The tabs hang under the window's bottom edge.
     f.tabs = {}
-    for i, name in ipairs(PANEL_PAGES) do
-        local tab = NewButton(f, 70, 22, name)
-        tab:SetPoint("TOPLEFT", WIN_PAD + (i - 1) * 74, -40)
+    local before
+    for _, name in ipairs(PANEL_PAGES) do
+        local tab = Skin.Tab(f, name, before)
         tab:SetScript("OnClick", function()
             CloseOverlays()
             resetAsked = false
@@ -342,12 +335,16 @@ local function BuildWindow()
             RefreshWindow()
         end)
         f.tabs[name] = tab
+        before = tab
     end
 
     -- Scrolling area: the Order tab grows with the number of bound keys.
     local scroll = CreateFrame("ScrollFrame", nil, f)
-    scroll:SetPoint("TOPLEFT", WIN_PAD, -72)
+    scroll:SetPoint("TOPLEFT", WIN_PAD, -TOP)
     scroll:SetPoint("BOTTOMRIGHT", -WIN_PAD, 48)
+    f.inset = Skin.Inset(f)
+    f.inset:SetPoint("TOPLEFT", scroll, "TOPLEFT", -8, 6)
+    f.inset:SetPoint("BOTTOMRIGHT", scroll, "BOTTOMRIGHT", 11, -5)
     local content = CreateFrame("Frame", nil, scroll)
     content:SetSize(WIN_W - WIN_PAD * 2, 10)
     scroll:SetScrollChild(content)
@@ -372,7 +369,7 @@ local function BuildWindow()
     -- Share tab: preset buttons, and a text box to copy the settings out of
     -- or paste them into.
     local share = CreateFrame("Frame", nil, f)
-    share:SetPoint("TOPLEFT", WIN_PAD, -72)
+    share:SetPoint("TOPLEFT", WIN_PAD, -TOP)
     share:SetPoint("BOTTOMRIGHT", -WIN_PAD, 48)
     share:Hide()
     f.share = share
@@ -398,16 +395,9 @@ local function BuildWindow()
         .. "Below: the legend's own settings, as text to keep or send.", -24)
 
     Heading("IMPORT / EXPORT", -100)
-    local box = CreateFrame("EditBox", nil, share)
-    box:SetPoint("TOPLEFT", 0, -116)
-    box:SetSize(inner, 24)
-    box:SetAutoFocus(false)
-    box:SetFont(STANDARD_TEXT_FONT, 11, "")
-    box:SetTextInsets(6, 6, 0, 0)
+    local box = Skin.EditBox(share, inner - 6, 24)
+    box:SetPoint("TOPLEFT", 6, -116)
     box:SetMaxLetters(4000)
-    box.bg = box:CreateTexture(nil, "BACKGROUND")
-    box.bg:SetAllPoints()
-    box.bg:SetColorTexture(0, 0, 0, 0.6)
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     share.box = box
@@ -430,14 +420,14 @@ local function BuildWindow()
         box:ClearFocus()
     end)
     share.status = Note("", -182)
-    share.status:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
+    share.status:SetTextColor(Skin.ON[1], Skin.ON[2], Skin.ON[3])
     Note("To share a setup: Export, copy the text, and send it. To use one: paste it into the box "
         .. "with Ctrl+V and press Import. Import replaces the settings in use, including the position.", -206)
 
     -- Bindings tab: ClickLegend's own click casting. Editor.lua fills it on
     -- first use.
     local bindings = CreateFrame("Frame", nil, f)
-    bindings:SetPoint("TOPLEFT", WIN_PAD, -72)
+    bindings:SetPoint("TOPLEFT", WIN_PAD, -TOP)
     bindings:SetPoint("BOTTOMRIGHT", -WIN_PAD, 14)
     bindings:Hide()
     f.bindings = bindings
@@ -468,13 +458,7 @@ end
 local function RefreshWindowNow()
     local f = window
     f.source:SetText(activeSource and ("showing " .. activeSource) or "no bindings found")
-    for name, tab in pairs(f.tabs) do
-        if name == activeTab then
-            tab.label:SetTextColor(ACCENT[1], ACCENT[2], ACCENT[3])
-        else
-            tab.label:SetTextColor(1, 1, 1)
-        end
-    end
+    for name, tab in pairs(f.tabs) do Skin.PickTab(tab, name == activeTab) end
 
     local y = 0
     local function Place(row)
@@ -518,17 +502,17 @@ local function RefreshWindowNow()
     f.hint:SetShown(activeTab == "Display" or activeTab == "Look")
     f.share:SetShown(activeTab == "Share")
     f.scroll:SetShown(activeTab ~= "Share" and activeTab ~= "Bindings")
+    f.inset:SetShown(activeTab ~= "Share" and activeTab ~= "Bindings")
     f.reset:SetShown(activeTab ~= "Bindings")        -- it resets the display settings, not bindings
     f.reset.label:SetText(resetAsked and "Click again to reset it all" or "Reset to defaults")
     if resetAsked then
         f.reset.label:SetTextColor(0.95, 0.55, 0.3)
     else
-        f.reset.label:SetTextColor(1, 1, 1)
+        Skin.Plain(f.reset)
     end
     f.bindings:SetShown(activeTab == "Bindings")
-    f:SetWidth(activeTab == "Bindings" and WIN_BIND_W or WIN_W)
     if activeTab == "Bindings" then
-        GetEditor(f.bindings, WIN_BIND_W - WIN_PAD * 2):Show()
+        GetEditor(f.bindings, WIN_W - WIN_PAD * 2):Show()
         RefreshEditor()
     end
 end
@@ -569,7 +553,7 @@ end
 -- The Bindings tab with the guided setup open on top of it.
 local function OpenGuidedSetup()
     OpenBindingsTab()
-    if window and window:IsShown() then ns.OpenWizard(window.bindings, WIN_BIND_W - WIN_PAD * 2) end     -- Wizard.lua
+    if window and window:IsShown() then ns.OpenWizard(window.bindings, WIN_W - WIN_PAD * 2) end     -- Wizard.lua
 end
 
 -- The Bindings tab with one key's rules open (a click on the legend).

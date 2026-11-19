@@ -89,6 +89,7 @@ local function Help()
     print("  /clg anchor screen | party | cursor, /clg side above | below | left | right, /clg gap <0-60>")
     print("  /clg basics - hide or show the plain Target and Menu clicks (now " .. (db.hideBasics and "hidden" or "shown") .. ")")
     print("  /clg npc - hide the legend over friendly NPCs, or not (now " .. (db.hideNPC and "hidden" or "shown") .. ")")
+    print("  /clg unlearned - hide or show bindings whose spell is not learned yet (now " .. (db.hideMissing and "hidden" or "shown") .. ")")
     print("  /clg hoverdim | missing - toggle row dimming, greying of broken bindings")
     print("  /clg usable | flash - toggle marking spells you cannot cast, the flash when one is cast")
     print("  /clg off dim | hide - spells that do not apply to the hovered unit (now " .. db.offStyle .. ")")
@@ -107,6 +108,7 @@ local function Help()
     print("  /clg labelstyle text | icon | corner (now " .. db.labelStyle .. ")")
     print("  /clg labelsize <7-14> - label size (now " .. db.labelSize .. ")")
     print("  /clg bg - toggle the background")
+    print("  /clg border none | tooltip | dialog - the game's frame around the legend (now " .. db.border .. ")")
     print("  /clg bgcolor | allycolor | enemycolor <RRGGBB> - e.g. /clg bgcolor 101418")
     print("  /clg rangecolor | manacolor | cooldowncolor <RRGGBB> - the tint of a spell you cannot cast now")
     print("  /clg bgalpha <0-1> | pad <0-20> - background opacity and padding")
@@ -118,7 +120,7 @@ end
 
 -- Each kind of command is a table from its name to the setting it changes.
 local TOGGLES = {
-    basics = "hideBasics", npc = "hideNPC", hoverdim = "hoverDim", missing = "flagMissing", usable = "flagUnusable", flash = "flash", bars = "bars", labels = "labels", minimap = "minimap",
+    basics = "hideBasics", unlearned = "hideMissing", npc = "hideNPC", hoverdim = "hoverDim", missing = "flagMissing", usable = "flagUnusable", flash = "flash", bars = "bars", labels = "labels", minimap = "minimap",
     bg = "background", flip = "enemyFirst", reverse = "reverse",
 }
 local NUMBERS = {
@@ -126,7 +128,7 @@ local NUMBERS = {
     labelsize = "labelSize", bgalpha = "bgA", pad = "bgPadding", gap = "anchorGap", mouse = "mouseSize",
 }
 local CHOICE_KEYS = {
-    layers = "layers", anchor = "anchor", source = "source", side = "anchorSide", off = "offStyle", mousepic = "mousePic",
+    border = "border", layers = "layers", anchor = "anchor", source = "source", side = "anchorSide", off = "offStyle", mousepic = "mousePic",
     visible = "visibility", labelstyle = "labelStyle", layout = "layout", rows = "rows", sort = "sort",
 }
 local COLORS = { bgcolor = "bg", allycolor = "ally", enemycolor = "enemy",

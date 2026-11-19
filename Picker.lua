@@ -10,8 +10,9 @@ local ipairs, type, tostring, tonumber, pcall = ipairs, type, tostring, tonumber
 local tsort = table.sort
 local max, min = math.max, math.min
 
-local ACCENT, Clamp, Safe =
-    ns.ACCENT, ns.Clamp, ns.Safe
+local Clamp, Safe, Skin =
+    ns.Clamp, ns.Safe, ns.Skin
+local ACCENT = Skin.ACCENT
 local NewText, SpellName, SpellTexture, ValidIcon =
     ns.NewText, ns.SpellName, ns.SpellTexture, ns.ValidIcon
 
@@ -149,6 +150,8 @@ end
 --  that is not in the list.
 -------------------------------------------------------------------------------
 local ROW_H, MAX_ROWS = 20, 12
+local EDGE = 5                      -- the list's border
+local function Top(search) return search and (EDGE + 25) or EDGE end
 local menu, blocker
 local state = { all = {}, shown = {}, onPick = nil, options = nil, offset = 0 }
 
@@ -193,11 +196,11 @@ local function Render()
             row:Hide()
         end
     end
-    local top = state.options.search and 26 or 2
+    local top = Top(state.options.search)
     menu.none:SetShown(#shown == 0)
     menu.more:SetShown(#shown > MAX_ROWS)
     menu.more:SetText((state.offset + 1) .. "-" .. (state.offset + visible) .. " of " .. #shown .. "  (scroll)")
-    menu:SetHeight(top + max(1, visible) * ROW_H + (#shown > MAX_ROWS and 16 or 2))
+    menu:SetHeight(top + max(1, visible) * ROW_H + (#shown > MAX_ROWS and 18 or EDGE))
 end
 
 -- Narrows the list to the items whose text contains what was typed.
@@ -224,7 +227,7 @@ local function BuildMenu()
     blocker:SetScript("OnClick", CloseMenu)
     blocker:Hide()
 
-    menu = CreateFrame("Frame", "ClickLegendMenu", UIParent)
+    menu = Skin.Popup("ClickLegendMenu", UIParent)
     menu:SetFrameStrata("TOOLTIP")
     menu:SetClampedToScreen(true)
     menu:EnableMouse(true)
@@ -236,25 +239,11 @@ local function BuildMenu()
         state.offset = state.offset - delta * 3
         Render()
     end)
-    local edge = menu:CreateTexture(nil, "BACKGROUND")
-    edge:SetAllPoints()
-    edge:SetColorTexture(0, 0, 0, 1)
-    local fill = menu:CreateTexture(nil, "BORDER")
-    fill:SetPoint("TOPLEFT", 1, -1)
-    fill:SetPoint("BOTTOMRIGHT", -1, 1)
-    fill:SetColorTexture(0.10, 0.11, 0.13, 1)
 
-    local search = CreateFrame("EditBox", nil, menu)
-    search:SetPoint("TOPLEFT", 3, -3)
-    search:SetPoint("TOPRIGHT", -3, -3)
-    search:SetHeight(20)
-    search:SetAutoFocus(false)
-    search:SetFont(STANDARD_TEXT_FONT, 11, "")
-    search:SetTextInsets(5, 5, 0, 0)
+    local search = Skin.EditBox(menu, 10, 20)
+    search:SetPoint("TOPLEFT", EDGE + 6, -EDGE - 1)
+    search:SetPoint("TOPRIGHT", -EDGE - 3, -EDGE - 1)
     search:SetMaxLetters(60)
-    search.bg = search:CreateTexture(nil, "BACKGROUND")
-    search.bg:SetAllPoints()
-    search.bg:SetColorTexture(0, 0, 0, 0.6)
     search:SetScript("OnTextChanged", function(self) Safe(Filter, self:GetText()) end)
     search:SetScript("OnEscapePressed", CloseMenu)
     search:SetScript("OnEnterPressed", function() Pick(1) end)        -- Enter takes the first match
@@ -266,7 +255,7 @@ local function BuildMenu()
         row:SetHeight(ROW_H)
         row.hl = row:CreateTexture(nil, "BACKGROUND")
         row.hl:SetAllPoints()
-        row.hl:SetColorTexture(0.26, 0.28, 0.31, 1)
+        Skin.Bar(row.hl, false)
         row.hl:Hide()
         row.icon = row:CreateTexture(nil, "ARTWORK")
         row.icon:SetSize(16, 16)
@@ -284,7 +273,7 @@ local function BuildMenu()
     menu.none = NewText(menu, 11, 0.6, 0.6, 0.6)
     menu.none:SetText("Nothing matches.")
     menu.more = NewText(menu, 9, 0.6, 0.6, 0.6)
-    menu.more:SetPoint("BOTTOM", 0, 3)
+    menu.more:SetPoint("BOTTOM", 0, EDGE)
 end
 
 local function ShowMenu(anchor, items, onPick, options)
@@ -292,16 +281,16 @@ local function ShowMenu(anchor, items, onPick, options)
     options = options or {}
     state.all, state.onPick, state.options = items, onPick, options
     local width = options.width or 180
-    local top = options.search and 26 or 2
+    local top = Top(options.search)
     menu:SetWidth(width)
     menu.search:SetShown(options.search and true or false)
     for i, row in ipairs(menu.rows) do
         row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", 1, -(top + (i - 1) * ROW_H))
-        row:SetWidth(width - 2)
+        row:SetPoint("TOPLEFT", EDGE, -(top + (i - 1) * ROW_H))
+        row:SetWidth(width - EDGE * 2)
     end
     menu.none:ClearAllPoints()
-    menu.none:SetPoint("TOPLEFT", 8, -(top + 3))
+    menu.none:SetPoint("TOPLEFT", EDGE + 6, -(top + 3))
     menu:ClearAllPoints()
     menu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
     blocker:Show()

@@ -146,11 +146,19 @@ local function Normalise(rule)
     return rule
 end
 
--- Plain left and right click are what select and steer in the world, so
--- those two stay on unit frames.
+-- Any key may work on units in the world. Plain left and right click are
+-- what select and steer there, so those two are "soft": the provider takes
+-- them only while the cursor is on a friendly player's character (in combat:
+-- on any living friendly unit, the most the game lets it tell apart then),
+-- and they are the game's own the rest of the time. Such a key never goes on
+-- to the target: with nothing under the cursor it is not ours at all.
 local function HoverAllowed(keyStr)
+    local _, key = ParseKey(keyStr)
+    return key ~= ""
+end
+local function SoftKey(keyStr)
     local mods, key = ParseKey(keyStr)
-    return key ~= "" and not (mods == "" and (key == "BUTTON1" or key == "BUTTON2"))
+    return mods == "" and (key == "BUTTON1" or key == "BUTTON2")
 end
 
 local function CleanBinding(b)
@@ -171,7 +179,7 @@ local function CleanBinding(b)
     end
     local hover = (b.hover == true and HoverAllowed(mods .. key)) or nil
     return { key = mods .. key, rules = rules, pre = pre, hover = hover,
-             orTarget = (hover and b.orTarget == true) or nil }
+             orTarget = (hover and b.orTarget == true and not SoftKey(mods .. key)) or nil }
 end
 
 local function CleanSet(set)
@@ -213,6 +221,7 @@ local function SanitizeCast()
     end
     cast.enabled = cast.enabled == true
     cast.down = cast.down == true
+    cast.targetEnemy = cast.targetEnemy ~= false     -- on unless switched off
     cast.set = Text(cast.set, NAME_LIMIT)
     local specSet = {}
     if type(cast.specSet) == "table" then
@@ -795,6 +804,7 @@ local function CompileBinding(binding)
         return not same
     end
     local seen, castClauses = {}, {}          -- castClauses: when a spell of this key is cast
+    local enemyClauses = {}                   -- when one is cast on the enemy under the cursor
     local elseParts, elseClauses = {}, {}     -- the same again for the player's target
     for i, rule in ipairs(live) do
         local action, clause = rule.action, Clause(rule.when)
@@ -824,6 +834,7 @@ local function CompileBinding(binding)
                 castVerb = "/use"
             else
                 castClauses[#castClauses + 1] = clause
+                if rule.when.reaction == "harm" and not rule.when.unit then enemyClauses[#enemyClauses + 1] = clause end
                 if onTarget then elseClauses[#elseClauses + 1] = onTarget end
             end
             castParts[#castParts + 1] = clause .. " " .. token
@@ -834,6 +845,7 @@ local function CompileBinding(binding)
             OwnLine("/click " .. clause .. " {rank:" .. action.spellID
                 .. (rule.when.unit and (":" .. rule.when.unit) or "") .. "}")
             castClauses[#castClauses + 1] = clause
+            if rule.when.reaction == "harm" and not rule.when.unit then enemyClauses[#enemyClauses + 1] = clause end
         elseif action.type == "text" then
             -- The player's own text runs as written, once no earlier rule has fired.
             if HasConditions(rule.when) then
@@ -877,6 +889,7 @@ local function CompileBinding(binding)
     -- The target's parts stand right after the last rule about the cursor's
     -- unit: in front of a rule that casts on the player, which always fits
     -- and would otherwise keep the target from ever being tried.
+    local targeting = (cast and cast.targetEnemy and #enemyClauses > 0) and true or false
     local function Build(onTarget)
         local all = {}
         for i, line in ipairs(lines) do all[i] = line end
@@ -892,6 +905,10 @@ local function CompileBinding(binding)
             all[1] = lineVerb .. " " .. tconcat(parts, "; ")
             when = when .. tconcat(elseClauses)
         end
+        -- The setting "enemy spells also target the enemy": the enemy under the
+        -- cursor becomes the target as the spell goes off, under the clauses
+        -- of the key's enemy spell rules only.
+        if targeting then table.insert(all, 1, "/target " .. tconcat(enemyClauses)) end
         if binding.pre and #castClauses > 0 then
             local at = 1
             for _, what in ipairs(PRE_ORDER) do
@@ -925,13 +942,25 @@ local function CompileBinding(binding)
     -- good. It is the game's again when nothing is under the cursor. Not
     -- together with "else my target": there the turn of the wheel is a cast.
     local _, bare = ParseKey(binding.key)
-    if binding.hover and not binding.orTarget and ZOOM[bare] then
+    if binding.hover and SoftKey(binding.key) then
+        out.soft = true                 -- held only over a friendly unit in the world (Provider.lua)
+    elseif binding.hover and not binding.orTarget and ZOOM[bare] then
         out.zoom = true
     elseif binding.hover and binding.orTarget and ZOOM[bare] then
         out.problems[#out.problems + 1] = "With \"else my target\" the wheel no longer zooms the camera. "
-            .. "\"Any unit under the cursor\" keeps the zoom when nothing is under the cursor."
+            .. "\"Unit frames + units in the world\" keeps the zoom when nothing is under the cursor."
     end
     if not out.text then out.text, out.length = Build(false) end
+    -- The line that targets the enemy is the first thing to go when the key
+    -- has no room: the key must still cast.
+    if targeting and out.length > MACRO_LIMIT then
+        targeting = false
+        out.text, out.length = Build(out.onTarget)
+        out.problems[#out.problems + 1] = "No room left on this key to also target the enemy; it casts without targeting."
+    end
+    -- With enemies targeted as they are cast on, a soft click loses nothing
+    -- over an enemy either, so it is taken there too.
+    if out.soft and targeting then out.softEnemy = true end
     out.tooLong = out.length > MACRO_LIMIT
     if out.tooLong then
         out.problems[#out.problems + 1] = "Too many rules for one key: " .. out.length
@@ -1097,7 +1126,7 @@ local function Shadowed()
     for _, binding in ipairs(set.bindings) do
         local _, bare = ParseKey(binding.key)
         -- A wheel key held only while a unit is under the cursor leaves the zoom alone.
-        if binding.hover and not (ZOOM[bare] and not binding.orTarget) then
+        if binding.hover and not (ZOOM[bare] and not binding.orTarget) and not SoftKey(binding.key) then
             local ok, action = pcall(GetBindingAction, binding.key)
             if ok and type(action) == "string" and action ~= "" and not action:find("ClickLegend", 1, true) then
                 local named = _G["BINDING_NAME_" .. action]
@@ -1171,7 +1200,7 @@ end
 ClickLegendAPI = {
     Print = Print, Report = Report, Safe = Safe, ParseKey = ParseKey,
     ActiveSet = ActiveSet, CompileBinding = CompileBinding, UsesExtraModifier = UsesExtraModifier,
-    HoverAllowed = HoverAllowed,
+    HoverAllowed = HoverAllowed, SoftKey = SoftKey,
     Settings = function() return cast end,
 }
 
@@ -1211,6 +1240,12 @@ end
 local function SetCastDown(on)
     if not cast then return end
     cast.down = on and true or false
+    CastChanged()
+end
+
+local function SetCastTargetEnemy(on)
+    if not cast then return end
+    cast.targetEnemy = on and true or false
     CastChanged()
 end
 
@@ -1315,6 +1350,7 @@ function Edit.SetKey(bindingIndex, keyStr)
     if taken and taken ~= bindingIndex then return false, KeyName(key) .. " is already in this set." end
     binding.key = key
     if not HoverAllowed(key) then binding.hover, binding.orTarget = nil, nil end
+    if SoftKey(key) then binding.orTarget = nil end
     CastChanged()
     return true
 end
@@ -1325,8 +1361,10 @@ end
 function Edit.SetHover(bindingIndex, on, orTarget)
     local _, binding = Target(bindingIndex)
     if not binding then return false, "No such key." end
-    if on and not HoverAllowed(binding.key) then
-        return false, "Plain left and right click stay on unit frames: the game needs them everywhere else."
+    if on and not HoverAllowed(binding.key) then return false, "That key cannot work in the world." end
+    if on and orTarget and SoftKey(binding.key) then
+        return false, "A plain left or right click cannot go on to your target: away from a friendly player "
+            .. "it is the game's own click."
     end
     binding.hover = on and true or nil
     binding.orTarget = (on and orTarget) and true or nil
@@ -2261,6 +2299,7 @@ ns.RenameSet        = RenameSet
 ns.SanitizeCast     = SanitizeCast
 ns.SelectSet        = SelectSet
 ns.SetCastDown      = SetCastDown
+ns.SetCastTargetEnemy = SetCastTargetEnemy
 ns.SetCastEnabled   = SetCastEnabled
 ns.SetCastFrames    = SetCastFrames
 ns.SetSideKey       = SetSideKey

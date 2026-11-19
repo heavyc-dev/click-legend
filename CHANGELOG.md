@@ -1,5 +1,21 @@
 # Changelog
 
+## 3.0.0
+Changed:
+- The settings window, the lists, the guided setup and the welcome window now look like the game's own interface: the metal frame with a title bar and close button, tabs along the bottom edge, red buttons, check boxes for on / off settings, the game's edit boxes and fonts, gold headings. Nothing moved to another tab and no setting changed; the legend on screen looks as it did.
+- The minimap button has the round background and highlight of the game's own minimap buttons.
+- The settings window keeps one size on every tab.
+- Hover casting is called mouseover casting, the name most players know it by, and is easier to find: a row at the top of the Bindings tab switches it for every keyboard key, the wheel and the extra mouse buttons at once (Off, On, On and else my target). On one key the button reads "Works on: unit frames" or "frames + world".
+- Which unit frames click casting works on, "Cast on press" and "Enemy spells also target" are check boxes on the Bindings tab, above the keys, and no longer lines of the More... list.
+- Starter sets, gone through against what a level 60 character can learn. Healer sets (priest, paladin, druid, shaman): the dispels are on the mouse wheel over a unit frame, Shift and Ctrl with the middle button carry buffs that had no key (Fear Ward, Divine Spirit, Shadow Protection, Mark of the Wild, Thorns, Blessing of Sacrifice, Water Breathing, Water Walking), and plain left and right click also heal a friendly player you click in the world. Mage: Dampen Magic and Amplify Magic. Warrior: Disarm in Defensive Stance where Taunt was on a second key. A set you already made from a starter set is not changed.
+- A key whose spell you have not learned yet, or whose macro is gone, is left out of the legend and the tooltip instead of being shown greyed out. "Hide spells you have not learned" on the Display tab (`/clg unlearned`) brings the old way back.
+- The settings have sliders beside minus and plus, an arrow on every button that opens a list, and a wider scroll bar.
+
+Added:
+- Plain left and right click can be mouseover keys: click the key in the Bindings tab, then "Works on". They are taken only while the cursor is on a friendly player's character in the world, so you can heal or buff a passer-by with a click; everywhere else they turn the camera, select, loot and talk as always. In combat a friendly NPC takes the click too: the game cannot tell it from a player then. Off unless you set it.
+- "Enemy spells also target": a spell cast on the enemy under the cursor also makes it your target, on every key. Casting on an ally never changes your target. With it on, a plain left or right click that works in the world is taken over living enemies too: one click targets and casts. It is on unless you switch it off, for sets you already have as well; a key with no room left for it casts without targeting and says so.
+- A border for the legend, on the Look tab (`/clg border none | tooltip | dialog`): the thin frame of a tooltip or the gold frame of a dialog. With the background on, the legend reads as one of the game's own panels. Off by default.
+
 ## 2.4.0
 Added:
 - "Hide over friendly NPCs" on the Display tab (`/clg npc`): no legend while the cursor is on a vendor, a quest giver, a trainer or another friendly NPC in the world. It stays for friendly players, their pets, enemies and every unit frame. Made for a legend attached to the cursor; off by default. Thank you to dekazakoff for the suggestion.

@@ -91,11 +91,16 @@ local OPTIONS = {
         { kind = "range", key = "perLine", text = "Keys per line", lo = 2, hi = 24, step = 1,
           when = function() return db.layout ~= "mouse" end },
         { header = "ICONS" },
+        { kind = "toggle", key = "hideMissing", text = "Hide spells you have not learned",
+          tip = "A key whose spell you have not learned yet, or whose macro is gone, is left out of the legend "
+              .. "and the tooltip until it can do something. A starter set has keys for every level, so this "
+              .. "keeps the legend to what you can cast. Off: such a key is shown greyed out." },
         -- One switch for two settings (`/clg missing` and `/clg usable` still set them apart).
         { kind = "toggle", text = "Mark spells that cannot be cast", refresh = true,
           get = function() return db.flagMissing or db.flagUnusable end,
           set = function(v) db.flagMissing, db.flagUnusable = v, v end,
-          tip = "A spell you have not learned, or a macro that is gone, is greyed out. A cooldown sweeps over its icon, "
+          tip = "A spell you have not learned, or a macro that is gone, is greyed out when it is shown at all "
+              .. "(see the switch above). A cooldown sweeps over its icon, "
               .. "a spell you lack the mana for turns blue, and one that cannot reach the unit under the cursor "
               .. "turns orange. The three colors are on the Look tab." },
         { kind = "toggle", key = "flash", text = "Flash an icon when its spell is cast",
@@ -178,12 +183,17 @@ local OPTIONS = {
         { kind = "color", prefix = "far", text = "Out of range", when = function() return db.flagUnusable end },
         { kind = "color", prefix = "mana", text = "Not enough mana", when = function() return db.flagUnusable end },
         { kind = "color", prefix = "cool", text = "On cooldown", when = function() return db.flagUnusable end },
-        { header = "BACKGROUND" },
+        { header = "BACKGROUND AND BORDER" },
         { kind = "toggle", key = "background", text = "Show background" },
         { kind = "color", prefix = "bg", alpha = true, text = "Background color and opacity",
           when = function() return db.background end },
-        { kind = "range", key = "bgPadding", text = "Background padding", lo = 0, hi = 20, step = 1,
-          when = function() return db.background end },
+        { kind = "choice", key = "border", text = "Border",
+          values = { none = "None", tooltip = "Thin, like a tooltip", dialog = "Gold, like a dialog" },
+          order = { "none", "tooltip", "dialog" },
+          tip = "A frame of the game's own around the legend. With the background on, it reads as one of the "
+              .. "game's own panels." },
+        { kind = "range", key = "bgPadding", text = "Padding", lo = 0, hi = 20, step = 1,
+          when = function() return db.background or db.border ~= "none" end },
     },
     Order = {
         { header = "ORDER" },

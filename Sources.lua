@@ -581,27 +581,31 @@ local function SetSource(name)
     ns.Publish("source", name)
 end
 
--- Setting `hideBasics`: the plain left click that targets and the plain right
--- click that opens the menu are what every unit frame does anyway, so they
--- can be left out of the legend and the tooltip. Only what is shown changes;
--- the bindings are untouched. Returns nil when nothing else is bound.
+-- What is bound but left out of the legend and the tooltip. Only what is
+-- shown changes; the bindings are untouched. Returns nil when nothing is left.
+--   `hideBasics`: the plain left click that targets and the plain right click
+--     that opens the menu, which every unit frame does anyway.
+--   `hideMissing`: a binding that cannot fire, because the spell is not
+--     learned yet (a starter set covers every level) or the macro is gone.
 local BASICS = { BUTTON1 = TYPE_NAME.target, BUTTON2 = TYPE_NAME.menu }
 
-local function DropBasics(layers)
-    local layer = layers[""]
-    if not layer then return layers end
-    local kept = {}
-    for _, key in ipairs(layer.keys) do
-        local slot, basic = layer.byKey[key], BASICS[key]
-        if basic then
+local function Trim(layers)
+    local basics, missing = db.hideBasics, db.hideMissing
+    if not (basics or missing) then return layers end
+    for mods, layer in pairs(layers) do
+        local kept = {}
+        for _, key in ipairs(layer.keys) do
+            local slot = layer.byKey[key]
+            local basic = basics and mods == "" and BASICS[key]
             for _, side in ipairs({ "ally", "enemy" }) do
-                if slot[side] and slot[side].name == basic then slot[side] = nil end
+                local entry = slot[side]
+                if entry and ((basic and entry.name == basic) or (missing and entry.missing)) then slot[side] = nil end
             end
+            if next(slot) then kept[#kept + 1] = key else layer.byKey[key] = nil end
         end
-        if next(slot) then kept[#kept + 1] = key else layer.byKey[key] = nil end
+        layer.keys = kept
+        if #kept == 0 then layers[mods] = nil end
     end
-    layer.keys = kept
-    if #kept == 0 then layers[""] = nil end
     return next(layers) and layers or nil
 end
 
@@ -612,8 +616,7 @@ local function CollectLayers()
             if not ok then Report(layers); layers = nil end
             if layers and next(layers) then
                 SetSource(source.name)
-                if db.hideBasics then return DropBasics(layers) end
-                return layers
+                return Trim(layers)
             end
         end
     end
