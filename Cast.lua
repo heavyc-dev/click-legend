@@ -1029,6 +1029,22 @@ local function ItemIcon(action)
     return nil
 end
 
+-- The first spell a text rule casts: "/cast [harm] Wrath; Starfire" -> "Wrath".
+-- The legend shows its icon; nil when the text casts no spell by name.
+local function TextSpell(text)
+    if type(text) ~= "string" then return nil end
+    for line in text:gmatch("[^\r\n]+") do
+        local args = line:match("^%s*/cast%s+(.*)") or line:match("^%s*/castsequence%s+(.*)")
+        if args then
+            args = args:gsub("^reset=%S+%s*", "")
+            local name = args:gsub("%b[]", ""):match("^%s*!?([^;,]-)%s*[;,]") or args:gsub("%b[]", ""):match("^%s*!?(.-)%s*$")
+            name = name and name:gsub("%s*%(.-%)$", "")
+            if name and name ~= "" then return name end
+        end
+    end
+    return nil
+end
+
 function ActionEntry(action)
     local t = action.type
     if t == "spell" then
@@ -1049,6 +1065,10 @@ function ActionEntry(action)
     elseif t == "trinket1" or t == "trinket2" then
         return Entry(ACTION_NAME[t], InventoryTexture(t == "trinket1" and 13 or 14))
     elseif t == "text" then
+        local name = TextSpell(action.text)
+        local id = name and SpellIDFor(name)
+        local tex = name and (SpellTexture(id) or SpellTexture(name))
+        if tex then return Entry(name, tex, id) end
         return Entry(ACTION_NAME.text, TYPE_ICON.macro)
     elseif t == "dispel" or t == "rez" then
         local name = PresetSpell(action)

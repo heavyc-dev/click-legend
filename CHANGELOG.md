@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.1.2
+Changed:
+- A macro text rule now shows the icon and name of the first spell its text casts (for example `/cast [harm] Wrath; Healing Touch` shows Wrath) in the legend, tooltip and lists, instead of the generic macro icon. Text that casts no spell keeps the macro icon.
+
 ## 3.1.1
 Fixed:
 - With mouseover casting on plain left or right click, an Alt-, Shift- or Ctrl-click on a player in the world cast the plain click's spell. It now targets that player, as the game's own click does. Clicks on unit frames are unchanged.
