@@ -384,6 +384,9 @@ local softDriverOn = false
 local softKeys = {}                 -- { key = "BUTTON1", button = "clgh3", enemy = true, "combat" or nil }
 local softHeld = false
 local softWatch, softElapsed = nil, 0
+-- The hidden key button's click for a modified soft click: target, nothing else.
+local SOFT_TARGET = "clgst"
+local SOFT_TARGET_TEXT = "/target [@mouseover,exists]"
 
 local function Plain(value) return not (issecretvalue and issecretvalue(value)) end
 
@@ -472,15 +475,32 @@ local function SyncHover(hover)
     softHeld = false
     local take, drop, softTake, softDrop, softEnemy = {}, {}, {}, {}, {}
     softKeys = {}
+    local function AddSoft(key, button, enemy)
+        softKeys[#softKeys + 1] = { key = key, button = button, enemy = enemy }
+        softTake[#softTake + 1] = ("self:SetBindingClick(true, %q, %q, %q)"):format(key, "ClickLegendCastKeys", button)
+        softDrop[#softDrop + 1] = ("self:ClearBinding(%q)"):format(key)
+        -- Over an enemy: taken when the key is for enemies too, let go when not.
+        softEnemy[#softEnemy + 1] = enemy and softTake[#softTake] or softDrop[#softDrop]
+    end
+    local bound = {}
+    for _, k in ipairs(hover) do bound[k.key] = true end
     for i, k in ipairs(hover) do
         if k.soft then
             -- Without the means to hold it part of the time it stays a unit-frame key.
             if canSoft then
-                softKeys[#softKeys + 1] = { key = k.key, button = "clgh" .. i, enemy = k.enemy }
-                softTake[#softTake + 1] = ("self:SetBindingClick(true, %q, %q, %q)"):format(k.key, "ClickLegendCastKeys", "clgh" .. i)
-                softDrop[#softDrop + 1] = ("self:ClearBinding(%q)"):format(k.key)
-                -- Over an enemy: taken when the key is for enemies too, let go when not.
-                softEnemy[#softEnemy + 1] = k.enemy and softTake[#softTake] or softDrop[#softDrop]
+                AddSoft(k.key, "clgh" .. i, k.enemy)
+                -- The game answers a modified click that has no binding of its
+                -- own with the plain one, so while the plain click is held an
+                -- Alt- or Shift-click on the same player would cast too. Each
+                -- such combination is held with it and only targets, as the
+                -- game's own modified click would.
+                for _, extra in ipairs(MOD_PREFIXES) do
+                    local key = extra:upper() .. k.key
+                    if not bound[key] then
+                        bound[key] = true
+                        AddSoft(key, SOFT_TARGET, k.enemy)
+                    end
+                end
             end
         elseif k.zoom and canWatch then
             take[#take + 1] = ("self:SetBindingClick(true, %q, %q, %q)"):format(k.key, "ClickLegendCastKeys", "clgh" .. i)
@@ -529,6 +549,10 @@ local function SyncKeys(keys, hover)
         end
         want["*type-clgh" .. i] = "macro"
         want["*macrotext-clgh" .. i] = text
+        if k.soft then
+            want["*type-" .. SOFT_TARGET] = "macro"
+            want["*macrotext-" .. SOFT_TARGET] = SOFT_TARGET_TEXT
+        end
     end
     for i, k in ipairs(keys) do
         local suffix = "clg" .. i

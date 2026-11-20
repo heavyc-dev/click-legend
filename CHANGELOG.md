@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.1.1
+Fixed:
+- With mouseover casting on plain left or right click, an Alt-, Shift- or Ctrl-click on a player in the world cast the plain click's spell. It now targets that player, as the game's own click does. Clicks on unit frames are unchanged.
+
 ## 3.1.0
 Thanks everyone for using this addon during development. This release is likely the "final" one for now. I don't want to scope creep this project and did a long pass on the quick start sets for each spec. That being said, I'm still taking requests for improvements, features, and QoL. Drop a message on the Curse Forge page and check out my other add ons if interested. - Heavy C
 
