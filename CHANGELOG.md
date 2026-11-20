@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.2.0
+Changed:
+- Legend icons are drawn as the game's own action buttons: the action bar's frame, its rounded corners, its glow under the cursor and when a spell is cast. Look tab, "Icon frame" (`/clg iconstyle button | flat`); Flat is the old look.
+- With action button icons, the mouse pictures beside the spells are buttons too: the same frame over an empty slot, with the mouse centred inside.
+- Label style "On the icon" shows the small mouse picture in the icon's corner, outlined so it reads over the spell; keyboard keys keep their name.
+- The settings window is the game's portrait frame, with the ClickLegend logo in the corner.
+- An unlocked legend is marked with Edit Mode's own box instead of a colored outline.
+- Key names and ranks on icons use the action bars' number font (EllesmereUI's font still wins when it is loaded).
+
+Added:
+- "Color the button frames by side" (`/clg tint`, off by default): each spell's frame takes the ally or enemy color, as the game marks an equipped item's button. Works alongside, or instead of, the color bars.
+
 ## 3.1.2
 Changed:
 - A macro text rule now shows the icon and name of the first spell its text casts (for example `/cast [harm] Wrath; Healing Touch` shows Wrath) in the legend, tooltip and lists, instead of the generic macro icon. Text that casts no spell keeps the macro icon.

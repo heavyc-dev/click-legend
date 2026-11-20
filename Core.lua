@@ -69,7 +69,7 @@ end
 local DEFAULTS = {
     point = "CENTER", relPoint = "CENTER", x = 0, y = -180,
     scale = 1, alpha = 1, iconSize = 28, spacing = 2,
-    locked = false, hidden = false, labels = true, labelSize = 9, bars = true,
+    locked = false, hidden = false, labels = true, labelSize = 9, bars = true, frameTint = false,
     labelStyle = "icon",        -- text | icon | corner
     visibility = "always",      -- always | group | combat | hover
     source = "auto",            -- auto | own | eui | clique | vuhdo | healbot | blizzard
@@ -94,6 +94,7 @@ local DEFAULTS = {
     coolR = 0.6, coolG = 0.6, coolB = 0.6,
     background = true, bgR = 0.1, bgG = 0.1, bgB = 0.1, bgA = 0.75, bgPadding = 4,
     border = "tooltip",         -- none | tooltip | dialog: the game's own frame around the legend
+    iconStyle = "button",       -- button (the action bar's frame) | flat (a thin black edge)
     tooltip = true, tooltipWorld = false,
     layout = "vertical",        -- horizontal | vertical | mouse
     mouseSize = 128,            -- the mouse picture's width and height, for the "mouse" layout
@@ -132,6 +133,7 @@ local CHOICES = {
     anchor = { screen = true, party = true, cursor = true },
     offStyle = { dim = true, hide = true },
     border = { none = true, tooltip = true, dialog = true },
+    iconStyle = { button = true, flat = true },
     anchorSide = { above = true, below = true, left = true, right = true },
     labelStyle = { text = true, icon = true, corner = true },
 }

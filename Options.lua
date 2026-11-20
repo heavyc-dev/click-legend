@@ -158,6 +158,10 @@ local OPTIONS = {
         { header = "SIZE" },
         { kind = "range", key = "iconSize", text = "Icon size", lo = 16, hi = 64, step = 1 },
         { kind = "range", key = "spacing", text = "Icon spacing", lo = 0, hi = 10, step = 1 },
+        { kind = "choice", key = "iconStyle", text = "Icon frame",
+          values = { button = "Action button", flat = "Flat" },
+          order = { "button", "flat" },
+          tip = "Action button: the action bar's own frame around each icon. Flat: a thin black edge." },
         { kind = "range", key = "scale", text = "Scale", lo = 0.5, hi = 2, step = 0.05,
           tip = "Shrinks or grows the whole legend, labels included." },
         { kind = "range", key = "alpha", text = "Opacity", lo = 0.1, hi = 1, step = 0.05 },
@@ -177,6 +181,10 @@ local OPTIONS = {
               .. "and large in the Mouse picture layout. For the one with twelve side buttons, the guided setup "
               .. "asks you to press each of them, so that every spell lands on the right one." },
         { kind = "toggle", key = "bars", text = "Ally / enemy color bars" },
+        { kind = "toggle", key = "frameTint", text = "Color the button frames by side",
+          tip = "With the Action button icon frame: each spell's frame takes the ally or enemy color, "
+              .. "the way the game marks an equipped item's button.",
+          when = function() return db.iconStyle == "button" end },
         { header = "COLORS" },
         { kind = "color", prefix = "ally", text = "Ally color" },
         { kind = "color", prefix = "enemy", text = "Enemy color" },

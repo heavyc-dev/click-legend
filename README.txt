@@ -248,11 +248,15 @@ Commands
   /clg scale <0.5-2>            overall scale
   /clg alpha <0.1-1>            opacity
   /clg labels | bars | tooltip  toggle labels, color bars, tooltip lines
+  /clg tint                     toggle button frames colored ally / enemy
+                                (with the action button icon frame)
   /clg labelstyle text | icon   text labels, or mouse icons for mouse buttons
   /clg labelsize <7-14>         label size
   /clg bg                       toggle the background
   /clg border none | tooltip | dialog
                                 the game's own frame around the legend
+  /clg iconstyle button | flat  the action bar's frame around each icon,
+                                or a thin black edge
   /clg bgcolor <RRGGBB>         background color, e.g. /clg bgcolor 101418
   /clg bgalpha <0-1>            background opacity
   /clg pad <0-20>               background padding

@@ -43,9 +43,9 @@ local function RefreshEditor() ns.RefreshEditor() end                           
 
 -- One width for every tab: what the Bindings tab needs (keys on the left, a
 -- key's rules on the right). A settings row is as wide as the list.
-local WIN_W, WIN_H, ROW_H, WIN_PAD = 680, 520, 26, 16
+local WIN_W, WIN_H, ROW_H, WIN_PAD = 680, 530, 26, 16
 local ROW_W = WIN_W - WIN_PAD * 2
-local TOP = 50                      -- where a tab's contents begin, under the title bar and the "showing ..." line
+local TOP = 60                      -- where a tab's contents begin, under the title bar, the "showing ..." line and the portrait
 local resetAsked = false            -- "Reset to defaults" was clicked once and waits for the second click
 
 -- A thin bar beside a scroll area: how far down it is, and a thumb to drag.
@@ -298,7 +298,7 @@ end
 
 local function BuildWindow()
     ResolveFont()
-    local f = Skin.Panel("ClickLegendOptions", UIParent, "ClickLegend")
+    local f = Skin.Panel("ClickLegendOptions", UIParent, "ClickLegend", "Interface\\AddOns\\ClickLegend\\ClickLegend-Logo.png")
     f:SetSize(WIN_W, WIN_H)
     f:SetPoint("CENTER")
     f:SetFrameStrata("DIALOG")
@@ -314,7 +314,7 @@ local function BuildWindow()
     end
 
     f.source = NewText(f, 10, 0.6, 0.6, 0.6)
-    f.source:SetPoint("TOPLEFT", WIN_PAD, -30)
+    f.source:SetPoint("TOPLEFT", f.portrait and WIN_PAD + 46 or WIN_PAD, -30)  -- right of the portrait
 
     Skin.Close(f, function() f:Hide(); CloseOverlays() end)
     f:SetScript("OnHide", function()                 -- Escape closes the window too

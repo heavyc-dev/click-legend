@@ -173,8 +173,17 @@ end
 -------------------------------------------------------------------------------
 -- A window: the game's metal frame with a title bar, or a flat dark box.
 -- `f.top` is how far down its contents may begin.
-local function Panel(name, parent, title)
-    local f = Make("Frame", name, parent, "DefaultPanelTemplate")
+-- With `portrait` (a texture path) it is the game's portrait frame, as the
+-- character sheet and the bags have, with that picture in the round corner;
+-- `f.portrait` then says so. A client without that frame gets the plain one.
+local function Panel(name, parent, title, portrait)
+    local f = portrait and Make("Frame", name, parent, "PortraitFrameTemplate")
+    if f and not f.SetPortraitToAsset then f = nil end
+    if f then
+        f.portrait = pcall(f.SetPortraitToAsset, f, portrait) or nil
+    else
+        f = Make("Frame", name, parent, "DefaultPanelTemplate")
+    end
     if f then
         f.native = true
         f.top = 24
@@ -206,7 +215,8 @@ end
 
 -- The X in a panel's corner.
 local function Close(f, onClick)
-    local b = f.native and Make("Button", nil, f, "UIPanelCloseButtonDefaultAnchors")
+    -- The portrait frame brings its own.
+    local b = f.native and (Part(f, "CloseButton") or Make("Button", nil, f, "UIPanelCloseButtonDefaultAnchors"))
     if not b then
         b = Button(f, 22, 22, "X")
         b:SetPoint("TOPRIGHT", -8, -8)

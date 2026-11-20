@@ -92,6 +92,33 @@ local function ApplyBorder(pad)
     end
 end
 
+-- While unlocked, the game's Edit Mode box (blue, named "ClickLegend") marks
+-- the legend, as Edit Mode marks the game's own frames; the outline above
+-- is the stand-in where that art is missing. Edit Mode's selection is a
+-- nine-slice laid out by `EditModeSystemSelectionLayout` in the kit
+-- "editmode-actionbar-highlight" (Blizzard_EditMode, Forever source). Asked
+-- for again until it can be made, since that addon may load after us.
+local selection, selectionFailed = nil, false
+local function Selection()
+    if selection or selectionFailed then return selection end
+    if not (NineSliceUtil and NineSliceUtil.ApplyLayout and type(EditModeSystemSelectionLayout) == "table") then
+        return nil
+    end
+    local ok, frame = pcall(CreateFrame, "Frame", nil, panel, "NineSliceCodeTemplate")
+    if not (ok and frame)
+        or not pcall(NineSliceUtil.ApplyLayout, frame, EditModeSystemSelectionLayout, "editmode-actionbar-highlight") then
+        selectionFailed = true
+        return nil
+    end
+    frame:SetFrameLevel(panel:GetFrameLevel() or 1)            -- under the icons
+    local label = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    label:SetPoint("BOTTOM", frame, "TOP", 0, 2)
+    label:SetText("ClickLegend")
+    frame:Hide()
+    selection = frame
+    return frame
+end
+
 -- The background, the border and the outline cover the legend plus the
 -- chosen padding.
 local function ApplyBackground(unlocked)
@@ -117,7 +144,14 @@ local function ApplyBackground(unlocked)
     right:SetPoint("TOPRIGHT", panel, "TOPRIGHT", pad, pad)
     right:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", pad, -pad)
     right:SetWidth(OUTLINE)
-    for _, edge in ipairs(moverEdges) do edge:SetShown(unlocked) end
+    local box = unlocked and Selection()
+    if box then
+        box:ClearAllPoints()
+        box:SetPoint("TOPLEFT", panel, "TOPLEFT", -pad, pad)
+        box:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", pad, -pad)
+    end
+    if selection then selection:SetShown(box and true or false) end
+    for _, edge in ipairs(moverEdges) do edge:SetShown(unlocked and not box) end
 end
 
 local layerText = panel:CreateFontString(nil, "OVERLAY")
@@ -146,8 +180,21 @@ local function ResolveFont()
     end
 end
 
-local function ApplyFont(fs, size)
+-- The action bars' number font (key names and ranks on the icons), read off
+-- the game's own font object; the standard font when it cannot be read.
+local function NumberFontPath()
+    local object = NumberFontNormal
+    if type(object) == "table" and object.GetFont then
+        local ok, path = pcall(object.GetFont, object)
+        if ok and type(path) == "string" and path ~= "" then return path end
+    end
+    return nil
+end
+
+-- `number`: a key name or a rank drawn on an icon, in the action bars' font.
+local function ApplyFont(fs, size, number)
     local path, flags = fontPath, fontFlags
+    if not path and number then path = NumberFontPath() end
     local ok, set = pcall(fs.SetFont, fs, path or STANDARD_TEXT_FONT, size, flags or "OUTLINE")
     if not ok or set == false then
         fs:SetFont(STANDARD_TEXT_FONT, size, "OUTLINE")
@@ -303,9 +350,19 @@ local function GetCell(i)
         cell.rank = cell.over:CreateFontString(nil, "OVERLAY")
         cell.rank:SetPoint("BOTTOMLEFT", 2, 1)
         cell.flash = cell.over:CreateTexture(nil, "ARTWORK")
-        cell.flash:SetAllPoints(cell.icon)
-        cell.flash:SetColorTexture(1, 1, 1, 1)
         cell.flash:SetAlpha(0)
+        -- Setting `iconStyle`: the action bar's frame, its round-cornered mask
+        -- and its glow under the cursor (StyleCell).
+        cell.art = cell:CreateTexture(nil, "OVERLAY")
+        cell.art:Hide()
+        cell.mask, cell.masked = false, false
+        if cell.CreateMaskTexture then
+            local ok, mask = pcall(cell.CreateMaskTexture, cell)
+            if ok and mask then cell.mask = mask end
+        end
+        cell.tint = cell:CreateTexture(nil, "OVERLAY", nil, 1)  -- setting frameTint: the frame in the side's color
+        cell.tint:Hide()
+        cell.hilite = cell:CreateTexture(nil, "HIGHLIGHT")    -- shown under the cursor while unlocked
         -- Mouse is only enabled while unlocked; a drag on an icon moves the legend.
         cell:RegisterForDrag("LeftButton")
         cell:SetScript("OnDragStart", function() cell.dragged = true; DragStart() end)
@@ -333,6 +390,113 @@ local function GetCell(i)
         cells[i] = cell
     end
     return cell
+end
+
+-- The action bar's own art, when this client has it (Forever's buttons are
+-- the Mainline ones: atlases UI-HUD-ActionBar-IconFrame...). Asked once.
+local BUTTON_ART = "UI-HUD-ActionBar-IconFrame"
+local buttonArt
+local FramedLabels                                      -- defined with the label glyphs
+local function HasButtonArt()
+    if buttonArt == nil then
+        if not (C_Texture and C_Texture.GetAtlasInfo) then return false end
+        local ok, info = pcall(C_Texture.GetAtlasInfo, BUTTON_ART)
+        buttonArt = (ok and info ~= nil) and true or false
+    end
+    return buttonArt
+end
+
+-- An atlas's own size, for a 45 px icon; the fallback when it cannot be read.
+local atlasSizes = {}
+local function AtlasSize(name, w, h)
+    local known = atlasSizes[name]
+    if not known then
+        known = { w, h }
+        if C_Texture and C_Texture.GetAtlasInfo then
+            local ok, info = pcall(C_Texture.GetAtlasInfo, name)
+            if ok and type(info) == "table" and tonumber(info.width) and tonumber(info.height) then
+                known = { tonumber(info.width), tonumber(info.height) }
+            end
+        end
+        atlasSizes[name] = known
+    end
+    return known[1], known[2]
+end
+local function MaskSize() return AtlasSize(BUTTON_ART .. "-Mask", 45, 45) end
+
+-- Dresses a cell as an action button or as a flat square. The action
+-- button's frame is 46 by 45 for a 45 by 45 icon, from the top left corner.
+local function StyleCell(cell, size)
+    local look = (db.iconStyle == "button" and HasButtonArt()) and "button" or "flat"
+    if cell.look == look and cell.lookSize == size then return end
+    cell.look, cell.lookSize = look, size
+    local icon, flash, hilite = cell.icon, cell.flash, cell.hilite
+    -- Text on the icon keeps clear of the button's bevel.
+    local inset = look == "button" and 2 or 0
+    cell.hotkey:ClearAllPoints()
+    cell.hotkey:SetPoint("TOPRIGHT", -1 - inset, -1 - inset)
+    cell.rank:ClearAllPoints()
+    cell.rank:SetPoint("BOTTOMLEFT", 2 + inset, 1 + inset)
+    icon:ClearAllPoints()
+    flash:ClearAllPoints()
+    hilite:ClearAllPoints()
+    if look == "button" then
+        local w, h = size * 46 / 45, size
+        cell.border:Hide()
+        icon:SetAllPoints(cell)
+        icon:SetTexCoord(0, 1, 0, 1)
+        if cell.mask then
+            -- As on the action bars: the mask at its own atlas size (larger
+            -- than the icon, its margin clear) scaled with the icon, centred
+            -- on it. Squeezed to the icon, the margin would eat its edges.
+            local mw, mh = MaskSize()
+            cell.mask:SetAtlas(BUTTON_ART .. "-Mask")
+            cell.mask:ClearAllPoints()
+            cell.mask:SetPoint("CENTER", icon, "CENTER")
+            cell.mask:SetSize(mw * size / 45, mh * size / 45)
+            if not cell.masked and icon.AddMaskTexture then
+                icon:AddMaskTexture(cell.mask)
+                cell.masked = true
+            end
+        end
+        cell.art:SetAtlas(BUTTON_ART)
+        cell.art:ClearAllPoints()
+        cell.art:SetPoint("TOPLEFT")
+        cell.art:SetSize(w, h)
+        cell.art:Show()
+        -- The colored border the game puts on an equipped item's button, at its
+        -- own size from the top left, as the action bars draw it.
+        local bw, bh = AtlasSize(BUTTON_ART .. "-Border", 46, 45)
+        cell.tint:SetAtlas(BUTTON_ART .. "-Border")
+        cell.tint:ClearAllPoints()
+        cell.tint:SetPoint("TOPLEFT")
+        cell.tint:SetSize(bw * size / 45, bh * size / 45)
+        -- A cast lights the button as the cursor does, a little brighter.
+        flash:SetAtlas(BUTTON_ART .. "-Mouseover")
+        flash:SetBlendMode("ADD")
+        flash:SetPoint("TOPLEFT")
+        flash:SetSize(w, h)
+        hilite:SetAtlas(BUTTON_ART .. "-Mouseover")
+        hilite:SetPoint("TOPLEFT")
+        hilite:SetSize(w, h)
+    else
+        cell.border:Show()
+        icon:SetPoint("TOPLEFT", 1, -1)
+        icon:SetPoint("BOTTOMRIGHT", -1, 1)
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        if cell.masked and icon.RemoveMaskTexture then
+            icon:RemoveMaskTexture(cell.mask)
+            cell.masked = false
+        end
+        cell.art:Hide()
+        cell.tint:Hide()
+        flash:SetColorTexture(1, 1, 1, 1)
+        flash:SetBlendMode("BLEND")
+        flash:SetAllPoints(icon)
+        hilite:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+        hilite:SetBlendMode("ADD")
+        hilite:SetAllPoints(icon)
+    end
 end
 
 local function GetLabel(i)
@@ -393,21 +557,30 @@ local function GlyphSize()
     return half * 2 + 1, gh, half, floor(gh * 0.45 + 0.5)
 end
 
--- The side of the square the mouse picture is drawn in as a label: about three
--- times the label size and at least four fifths of a spell icon, so that it
--- reads beside one, and never larger than an icon, or the labels of
--- neighbouring keys would meet.
-local function ArtSide()
-    local least = db.labelSize + 11
-    local wanted = max(db.labelSize * 3 + 2, floor(db.iconSize * 0.8))
-    return max(least, min(wanted, db.iconSize))
-end
-
 -- True when the labels are the mouse picture (and not the drawn rectangles).
 local function ArtLabels()
     local L = MOUSE and (MOUSE[db.mousePic] or MOUSE.a)
     return db.labelStyle == "icon" and L and L.small and true or false
 end
+
+-- With action-button icons, each mouse picture is a button too: the same
+-- frame over the slot's dark background, as large as the spell icons.
+function FramedLabels()
+    return ArtLabels() and db.iconStyle == "button" and HasButtonArt()
+end
+
+-- The side of the square the mouse picture is drawn in as a label: about three
+-- times the label size and at least four fifths of a spell icon, so that it
+-- reads beside one, and never larger than an icon, or the labels of
+-- neighbouring keys would meet.
+local function ArtSide()
+    if FramedLabels() then return db.iconSize end           -- a button of its own, as large as a spell's
+    local least = db.labelSize + 11
+    local wanted = max(db.labelSize * 3 + 2, floor(db.iconSize * 0.8))
+    return max(least, min(wanted, db.iconSize))
+end
+
+
 
 -- The height the label row needs (horizontal layout) for the current style.
 local function LabelHeight()
@@ -445,6 +618,18 @@ local function GetGlyph(i)
         g.art:SetAllPoints()
         g.artLit = g:CreateTexture(nil, "ARTWORK")
         g.artLit:SetAllPoints()
+        -- On an icon's corner: the picture again in black, a pixel out on each
+        -- side, so that it reads over any spell icon.
+        g.slot = g:CreateTexture(nil, "BACKGROUND", nil, -1)  -- framed label: the empty slot
+        g.slot:SetAllPoints()
+        g.slot:Hide()
+        g.frame = g:CreateTexture(nil, "OVERLAY", nil, 7)     -- framed label: the button's frame
+        g.frame:Hide()
+        g.shade = {}
+        for n = 1, 4 do
+            g.shade[n] = g:CreateTexture(nil, "BACKGROUND")
+            g.shade[n]:Hide()
+        end
         glyphs[i] = g
     end
     return g
@@ -466,8 +651,25 @@ local function GlyphText(g, text, size, x, y)
     g.num:Show()
 end
 
-local function DrawGlyph(g, key)
+-- The keys the mouse picture can show (a button of the picture, or an extra
+-- mouse button drawn as the mouse with its number).
+local function HasPicture(key)
+    local L = MOUSE and (MOUSE[db.mousePic] or MOUSE.a)
+    local small = L and L.small
+    if not small then return false end
+    local region = MouseKeys(L)[key]
+    return (region and small.cells[region]) and true or (MouseRank(key) and true or false)
+end
+
+local SHADE_AT = { { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }
+
+-- `corner`: the side of the square when the glyph sits on an icon's corner
+-- (label style "On the icon"): drawn lighter and with a black outline.
+local function DrawGlyph(g, key, corner)
     local gw, gh, half, bh = GlyphSize()
+    for _, t in ipairs(g.shade) do t:Hide() end
+    g.slot:Hide()
+    g.frame:Hide()
     g.lit:Hide()
     g.num:Hide()
     g.divider:Hide()
@@ -486,19 +688,47 @@ local function DrawGlyph(g, key)
     local region = small and MouseKeys(L)[key]
     local cell = region and small.cells[region]
     if cell or (small and MouseRank(key)) then
-        local side = ArtSide()                              -- square: the picture carries its own margins
+        local side = corner or ArtSide()                    -- square: the picture carries its own margins
         g:SetSize(side, side)
         g.outline:Hide()
         g.body:Hide()
         ShowCell(g.art, small, 0)
-        if g.art.SetVertexColor then g.art:SetVertexColor(0.55, 0.57, 0.62) end
+        local framed = not corner and FramedLabels()
+        if framed then
+            g.slot:SetAtlas(BUTTON_ART .. "-Background")
+            g.slot:Show()
+            g.frame:SetAtlas(BUTTON_ART)
+            g.frame:ClearAllPoints()
+            g.frame:SetPoint("TOPLEFT")
+            g.frame:SetSize(side * 46 / 45, side)
+            g.frame:Show()
+        end
+        -- In a frame the mouse is drawn smaller, centred, clear of the bevel.
+        local pad = framed and floor(side * 0.16 + 0.5) or 0
+        local inner = side - pad * 2
+        for _, t in ipairs({ g.art, g.artLit }) do
+            t:ClearAllPoints()
+            t:SetPoint("TOPLEFT", g, "TOPLEFT", pad, -pad)
+            t:SetPoint("BOTTOMRIGHT", g, "BOTTOMRIGHT", -pad, pad)
+        end
+        local grey = (corner or framed) and 0.78 or 0.55
+        if g.art.SetVertexColor then g.art:SetVertexColor(grey, grey + 0.02, grey + 0.07) end
+        if corner then
+            for n, t in ipairs(g.shade) do
+                ShowCell(t, small, 0)
+                if t.SetVertexColor then t:SetVertexColor(0, 0, 0) end
+                t:ClearAllPoints()
+                t:SetPoint("TOPLEFT", g, "TOPLEFT", SHADE_AT[n][1], SHADE_AT[n][2])
+                t:SetSize(side, side)
+            end
+        end
         if cell then
             ShowCell(g.artLit, small, cell)
             if key == "MOUSEWHEELUP" or key == "MOUSEWHEELDOWN" then
                 -- The wheel alone would read as a middle click: an arrow in the
                 -- palm says which way it turns.
-                local top = floor(side * 0.62)
-                local u = max(1, floor(side / 14))          -- the arrow grows with the picture
+                local top = pad + floor(inner * 0.62)
+                local u = max(1, floor(inner / 14))         -- the arrow grows with the picture
                 for row = 1, 3 do
                     local w = ((key == "MOUSEWHEELUP") and (row * 2 - 1) or (7 - row * 2)) * u
                     GlyphRect(g, g.tri[row], (side - 2) / 2 - w / 2, top + (row - 1) * u, w, u)
@@ -506,7 +736,7 @@ local function DrawGlyph(g, key)
             end
         else
             local n = key:match("^BUTTON(%d+)$")                    -- a button the picture does not have
-            GlyphText(g, n or "", max(6, db.labelSize), (side - 2) / 2, side * 0.68)
+            GlyphText(g, n or "", max(6, db.labelSize), (side - 2) / 2, pad + inner * 0.68)
         end
         return
     end
@@ -679,7 +909,11 @@ local function PlaceCell(draw, sec, key, side, x, y, size, entry, keyed)
     cell:ClearAllPoints()
     cell:SetPoint("TOPLEFT", panel, "TOPLEFT", x, y)
     cell:SetSize(size, size)
+    StyleCell(cell, size)
     cell.entry, cell.key, cell.mods, cell.side = entry, key, sec.mods, side
+    local tinted = entry ~= nil and db.frameTint and cell.look == "button"
+    if tinted then cell.tint:SetVertexColor(SideColor(side)) end
+    cell.tint:SetShown(tinted and true or false)
     cell:EnableMouse((entry ~= nil and not db.locked) and true or false)
     if entry then
         cell.icon:SetTexture(entry.icon)
@@ -710,14 +944,33 @@ local function PlaceCell(draw, sec, key, side, x, y, size, entry, keyed)
     end
     if entry then
         local showKey = keyed and db.labels and db.labelStyle == "corner"
-        cell.hotkey:SetShown(showKey and true or false)
-        if showKey then
-            ApplyFont(cell.hotkey, max(6, min(db.labelSize, floor(size * 0.45))))
+        -- A mouse button: the small mouse picture on the corner, as an action
+        -- button carries its key there. A keyboard key: its name.
+        local picture = showKey and HasPicture(key)
+        if picture then
+            draw.glyph = draw.glyph + 1
+            local g = GetGlyph(draw.glyph)
+            local side = max(12, floor(size * 0.6))
+            DrawGlyph(g, key, side)
+            g:SetFrameLevel((cell.over:GetFrameLevel() or 1) + 1)
+            g:ClearAllPoints()
+            -- Bottom right, inside the button's bevel (3 of its 45 px).
+            local inset = cell.look == "button" and floor(size * 3 / 45 + 0.5) or 1
+            g:SetPoint("BOTTOMRIGHT", cell, "BOTTOMRIGHT", -inset, inset)
+            g:SetAlpha(cell:GetAlpha() or 1)
+            g:Show()
+        end
+        cell.hotkey:SetShown((showKey and not picture) and true or false)
+        if showKey and not picture then
+            ApplyFont(cell.hotkey, max(6, min(db.labelSize, floor(size * 0.45))), true)
             cell.hotkey:SetText(ShortKey(key))
+            -- On an action button the key is the action bars' light grey.
+            local grey = cell.look == "button" and 0.85 or 1
+            cell.hotkey:SetTextColor(grey, grey, grey)
         end
         cell.rank:SetShown(entry.rank ~= nil)
         if entry.rank then
-            ApplyFont(cell.rank, max(6, min(db.labelSize, floor(size * 0.4))))
+            ApplyFont(cell.rank, max(6, min(db.labelSize, floor(size * 0.4))), true)
             cell.rank:SetText(tostring(entry.rank))
             cell.rank:SetTextColor(1, 0.82, 0)
         end

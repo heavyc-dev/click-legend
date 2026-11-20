@@ -105,10 +105,12 @@ local function Help()
     print("  /clg wrap <2-24> - buttons per line (now " .. db.perLine .. ")")
     print("  /clg size <16-64> | scale <0.5-2> | alpha <0.1-1>")
     print("  /clg labels | bars | tooltip - toggle labels, color bars, tooltip lines")
+    print("  /clg tint - toggle button frames colored by side (action button icons)")
     print("  /clg labelstyle text | icon | corner (now " .. db.labelStyle .. ")")
     print("  /clg labelsize <7-14> - label size (now " .. db.labelSize .. ")")
     print("  /clg bg - toggle the background")
     print("  /clg border none | tooltip | dialog - the game's frame around the legend (now " .. db.border .. ")")
+    print("  /clg iconstyle button | flat - the frame around each icon (now " .. db.iconStyle .. ")")
     print("  /clg bgcolor | allycolor | enemycolor <RRGGBB> - e.g. /clg bgcolor 101418")
     print("  /clg rangecolor | manacolor | cooldowncolor <RRGGBB> - the tint of a spell you cannot cast now")
     print("  /clg bgalpha <0-1> | pad <0-20> - background opacity and padding")
@@ -120,7 +122,7 @@ end
 
 -- Each kind of command is a table from its name to the setting it changes.
 local TOGGLES = {
-    basics = "hideBasics", unlearned = "hideMissing", npc = "hideNPC", hoverdim = "hoverDim", missing = "flagMissing", usable = "flagUnusable", flash = "flash", bars = "bars", labels = "labels", minimap = "minimap",
+    basics = "hideBasics", unlearned = "hideMissing", npc = "hideNPC", hoverdim = "hoverDim", missing = "flagMissing", usable = "flagUnusable", flash = "flash", bars = "bars", tint = "frameTint", labels = "labels", minimap = "minimap",
     bg = "background", flip = "enemyFirst", reverse = "reverse",
 }
 local NUMBERS = {
@@ -128,7 +130,7 @@ local NUMBERS = {
     labelsize = "labelSize", bgalpha = "bgA", pad = "bgPadding", gap = "anchorGap", mouse = "mouseSize",
 }
 local CHOICE_KEYS = {
-    border = "border", layers = "layers", anchor = "anchor", source = "source", side = "anchorSide", off = "offStyle", mousepic = "mousePic",
+    border = "border", iconstyle = "iconStyle", layers = "layers", anchor = "anchor", source = "source", side = "anchorSide", off = "offStyle", mousepic = "mousePic",
     visible = "visibility", labelstyle = "labelStyle", layout = "layout", rows = "rows", sort = "sort",
 }
 local COLORS = { bgcolor = "bg", allycolor = "ally", enemycolor = "enemy",
