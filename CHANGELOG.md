@@ -1,6 +1,16 @@
 # Changelog
 
-## 3.0.0
+## 3.1.0
+Thanks everyone for using this addon during development. This release is likely the "final" one for now. I don't want to scope creep this project and did a long pass on the quick start sets for each spec. That being said, I'm still taking requests for improvements, features, and QoL. Drop a message on the Curse Forge page and check out my other add ons if interested. - Heavy C
+
+Added:
+- Class Spec Quickstart, on the welcome window between Guided setup and Open settings (`/clg welcome` shows it again): it picks the starter set for your class and spec, which you can change in a list, and one click on "Okay, set it up" switches click casting on with mouseover casting, "Enemy spells also target", and the default legend.
+- Starter sets per spec: "Druid: balance" and "Druid: feral" replace "Druid: feral or balance", "Shaman: elemental" and "Shaman: enhancement" replace "Shaman: elemental or enhancement".
+
+Changed:
+- Every starter set has its main damage spell on plain left click for enemies, and casters a second one on plain right click (Wrath / Starfire, Smite / Mind Blast, Frostbolt / Fireball, Shadow Bolt / Searing Pain, Lightning Bolt / Earth Shock or Chain Lightning). Only in combat: out of combat a click on an enemy only targets it, so nothing is pulled by a click. Melee sets and hunters keep plain right click on an enemy as the attack. Plain left and right click of every set also work on units in the world. Heals over time and damage over time or debuffs share a key (Rejuvenation / Faerie Fire). A set you already made from a starter set is not changed.
+- New installs start with the legend in a column, with a thin border on a dark grey background. Settings you already have are not changed.
+- Keys take less of the game's 255-character limit, so more rules fit on one key.
 Changed:
 - The settings window, the lists, the guided setup and the welcome window now look like the game's own interface: the metal frame with a title bar and close button, tabs along the bottom edge, red buttons, check boxes for on / off settings, the game's edit boxes and fonts, gold headings. Nothing moved to another tab and no setting changed; the legend on screen looks as it did.
 - The minimap button has the round background and highlight of the game's own minimap buttons.

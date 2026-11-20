@@ -381,7 +381,7 @@ local driverOn = false
 -- over a living enemy as well: there the click still targets, and casts.
 local SOFT_STATE = "[combat,@mouseover,help,nodead] 1; [combat,@mouseover,harm,nodead] 3; [combat] 0; 2"
 local softDriverOn = false
-local softKeys = {}                 -- { key = "BUTTON1", button = "clgh3", enemy = true or nil }
+local softKeys = {}                 -- { key = "BUTTON1", button = "clgh3", enemy = true, "combat" or nil }
 local softHeld = false
 local softWatch, softElapsed = nil, 0
 
@@ -424,7 +424,9 @@ local function SoftApply(force)
     if want == softHeld and not force then return end
     softHeld = want
     for _, k in ipairs(softKeys) do
-        if want == "ally" or (want == "enemy" and k.enemy) then
+        -- Out of combat only: a key whose enemy spells are for combat only
+        -- ("combat") leaves the click on an enemy to the game.
+        if want == "ally" or (want == "enemy" and k.enemy == true) then
             SetOverrideBindingClick(header, true, k.key, "ClickLegendCastKeys", k.button)
         else
             SetOverrideBinding(header, true, k.key, nil)

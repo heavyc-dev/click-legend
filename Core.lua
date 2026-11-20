@@ -92,10 +92,10 @@ local DEFAULTS = {
     farR = 1, farG = 0.6, farB = 0.1,
     manaR = 0.4, manaG = 0.5, manaB = 1,
     coolR = 0.6, coolG = 0.6, coolB = 0.6,
-    background = false, bgR = 0.04, bgG = 0.04, bgB = 0.04, bgA = 0.6, bgPadding = 4,
-    border = "none",            -- none | tooltip | dialog: the game's own frame around the legend
+    background = true, bgR = 0.1, bgG = 0.1, bgB = 0.1, bgA = 0.75, bgPadding = 4,
+    border = "tooltip",         -- none | tooltip | dialog: the game's own frame around the legend
     tooltip = true, tooltipWorld = false,
-    layout = "horizontal",      -- horizontal | vertical | mouse
+    layout = "vertical",        -- horizontal | vertical | mouse
     mouseSize = 128,            -- the mouse picture's width and height, for the "mouse" layout
     mousePic = "a",             -- a | b | c | d: which mouse is drawn, in the labels and in the "mouse" layout
     rows = "both",              -- both | ally | enemy

@@ -46,6 +46,11 @@ Click casting of its own (optional, off until you switch it on)
   whether your keys should also cast on units in the world (hover
   casting). The last step switches click casting on. In a hurry: "Skip
   the setup: use it and turn on" takes the set as it is.
+  Quickest of all: the welcome window's "Class Spec Quickstart" picks
+  the starter set for your class and spec (change it in the list), and
+  one click on "Okay, set it up" switches click casting on with
+  mouseover casting, enemy spells that also target, and the default
+  legend (a column, small mouse pictures, a thin border on dark grey).
   Everything below is for changing it afterwards.
   - The tab has two halves: your keys on the left, and on the right the
     rules of the key you click. The two icons beside a key are what it
@@ -134,7 +139,11 @@ Click casting of its own (optional, off until you switch it on)
   - New... offers a starter set for each class to begin from. The most used
     spells are on the plain clicks, then Shift, Ctrl and Alt. Where a plain
     click has an ally spell, it still targets or opens the menu on everyone
-    else, and Alt + Left and Alt + Right are Target and Menu.
+    else, and Alt + Left and Alt + Right are Target and Menu. In combat,
+    plain left click on an enemy casts your main damage spell and targets
+    the enemy (casters: right click a second one); out of combat it only
+    targets, so nothing is pulled by a click. Melee and hunters keep right
+    click on an enemy as the attack.
   - More... renames or copies a set, exports it as text to share, imports
     one, and sorts the keys. Hover a key in the list to read all of its
     rules. It also holds which unit frames click casting works on, and

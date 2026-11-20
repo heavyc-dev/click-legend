@@ -216,8 +216,9 @@ local function OpenShareTab() ns.OpenShareTab() end       -- Window.lua
 local ApplyPreset               -- defined with the share functions
 local PRESETS = {
     default = { name = "Default", set = {
-        layout = "horizontal", rows = "both", layers = "held", iconSize = 28, spacing = 2, perLine = 12,
-        scale = 1, labels = true, labelStyle = "icon", labelSize = 9, bars = true, background = false } },
+        layout = "vertical", rows = "both", layers = "held", iconSize = 28, spacing = 2, perLine = 12,
+        scale = 1, labels = true, labelStyle = "icon", labelSize = 9, bars = true, background = true,
+        border = "tooltip" } },
     compact = { name = "Compact", set = {
         layout = "horizontal", rows = "both", layers = "held", iconSize = 20, spacing = 1, perLine = 12,
         labels = false, bars = true, background = false } },

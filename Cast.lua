@@ -782,12 +782,6 @@ local function CompileBinding(binding)
         end
     end
     local ownLines = false
-    local function OwnLine(text)
-        ownLines = true
-        CloseCast()
-        if #earlier > 0 then lines[#lines + 1] = "/stopmacro " .. tconcat(earlier) end
-        lines[#lines + 1] = text
-    end
     -- A rule whose conditions include every condition of an earlier rule can
     -- never fire: whenever it fits, the earlier one fits too and wins. (The
     -- very same conditions are the usual shape of "this spell, or else that
@@ -803,8 +797,50 @@ local function CompileBinding(binding)
         end
         return not same
     end
+    -- The /stopmacro in front of a later line names the clauses of the rules
+    -- before it. A clause that holds only when another one listed holds too
+    -- adds nothing ([@mouseover,help,dead] beside [@mouseover,help]) and is
+    -- left out, for room. With `skipEnemy` the enemy spells' clauses are left
+    -- out as well: see the Target line below.
+    local earlierWhen = {}
+    local function Implies(when, general)
+        if when.unit ~= general.unit then return false end
+        for field, value in pairs(general) do
+            if when[field] ~= value then return false end
+        end
+        return true
+    end
+    local function IsEnemy(when) return when.reaction == "harm" and not when.unit end
+    local function StopLine(skipEnemy)
+        local keep = {}
+        for i, clause in ipairs(earlier) do
+            local when = earlierWhen[i]
+            local drop = skipEnemy and IsEnemy(when)
+            for j, other in ipairs(earlierWhen) do
+                if drop then break end
+                if j ~= i and not (skipEnemy and IsEnemy(other)) and Implies(when, other)
+                        and not (j > i and Implies(other, when)) then
+                    drop = true
+                end
+            end
+            if not drop then keep[#keep + 1] = clause end
+        end
+        return #keep > 0 and ("/stopmacro " .. tconcat(keep)) or nil
+    end
+    local function OwnLine(text, skipEnemy)
+        ownLines = true
+        CloseCast()
+        local stop = #earlier > 0 and StopLine(skipEnemy)
+        if stop then lines[#lines + 1] = stop end
+        lines[#lines + 1] = text
+    end
+    -- "Enemy spells also target the enemy" on a key that ends in Target for
+    -- anyone: the enemy's spell is not stopped before that line, which then
+    -- targets the enemy after the cast. No /target line in front is needed.
+    local targetLast = false
     local seen, castClauses = {}, {}          -- castClauses: when a spell of this key is cast
     local enemyClauses = {}                   -- when one is cast on the enemy under the cursor
+    local enemyAnyTime = false                -- one of those is not for combat only
     local elseParts, elseClauses = {}, {}     -- the same again for the player's target
     for i, rule in ipairs(live) do
         local action, clause = rule.action, Clause(rule.when)
@@ -824,7 +860,8 @@ local function CompileBinding(binding)
             token = nil
         elseif token then
             if not castParts then
-                if #earlier > 0 and #lines > 0 then lines[#lines + 1] = "/stopmacro " .. tconcat(earlier) end
+                local stop = #earlier > 0 and #lines > 0 and StopLine(false)
+                if stop then lines[#lines + 1] = stop end
                 castParts, castVerb = {}, "/cast"
             end
             -- A rule with a unit of its own has nothing to add for the target:
@@ -834,7 +871,10 @@ local function CompileBinding(binding)
                 castVerb = "/use"
             else
                 castClauses[#castClauses + 1] = clause
-                if rule.when.reaction == "harm" and not rule.when.unit then enemyClauses[#enemyClauses + 1] = clause end
+                if rule.when.reaction == "harm" and not rule.when.unit then
+                    enemyClauses[#enemyClauses + 1] = clause
+                    if rule.when.combat ~= true then enemyAnyTime = true end
+                end
                 if onTarget then elseClauses[#elseClauses + 1] = onTarget end
             end
             castParts[#castParts + 1] = clause .. " " .. token
@@ -845,7 +885,10 @@ local function CompileBinding(binding)
             OwnLine("/click " .. clause .. " {rank:" .. action.spellID
                 .. (rule.when.unit and (":" .. rule.when.unit) or "") .. "}")
             castClauses[#castClauses + 1] = clause
-            if rule.when.reaction == "harm" and not rule.when.unit then enemyClauses[#enemyClauses + 1] = clause end
+            if rule.when.reaction == "harm" and not rule.when.unit then
+                enemyClauses[#enemyClauses + 1] = clause
+                if rule.when.combat ~= true then enemyAnyTime = true end
+            end
         elseif action.type == "text" then
             -- The player's own text runs as written, once no earlier rule has fired.
             if HasConditions(rule.when) then
@@ -856,11 +899,14 @@ local function CompileBinding(binding)
         elseif action.type == "menu" then
             OwnLine("/click " .. clause .. " {menu}")
         elseif COMMAND[action.type] then
-            OwnLine(COMMAND[action.type] .. " " .. clause)
+            local last = action.type == "target" and not HasConditions(rule.when)
+                and cast and cast.targetEnemy and #enemyClauses > 0
+            if last then targetLast = true end
+            OwnLine(COMMAND[action.type] .. " " .. clause, last)
         elseif not seen[clause] then
             out.problems[#out.problems + 1] = "A macro can only be the single rule of a key, with no conditions."
         end
-        if not seen[clause] then earlier[#earlier + 1] = clause end
+        if not seen[clause] then earlier[#earlier + 1], earlierWhen[#earlier + 1] = clause, rule.when end
         seen[clause] = true
         if Always(rule.when) and (rule.when.unit or not binding.hover) then
             if i < #live then
@@ -908,7 +954,7 @@ local function CompileBinding(binding)
         -- The setting "enemy spells also target the enemy": the enemy under the
         -- cursor becomes the target as the spell goes off, under the clauses
         -- of the key's enemy spell rules only.
-        if targeting then table.insert(all, 1, "/target " .. tconcat(enemyClauses)) end
+        if targeting and not targetLast then table.insert(all, 1, "/target " .. tconcat(enemyClauses)) end
         if binding.pre and #castClauses > 0 then
             local at = 1
             for _, what in ipairs(PRE_ORDER) do
@@ -953,14 +999,16 @@ local function CompileBinding(binding)
     if not out.text then out.text, out.length = Build(false) end
     -- The line that targets the enemy is the first thing to go when the key
     -- has no room: the key must still cast.
-    if targeting and out.length > MACRO_LIMIT then
+    if targeting and not targetLast and out.length > MACRO_LIMIT then
         targeting = false
         out.text, out.length = Build(out.onTarget)
         out.problems[#out.problems + 1] = "No room left on this key to also target the enemy; it casts without targeting."
     end
     -- With enemies targeted as they are cast on, a soft click loses nothing
-    -- over an enemy either, so it is taken there too.
-    if out.soft and targeting then out.softEnemy = true end
+    -- over an enemy either, so it is taken there too. "combat" when every
+    -- enemy spell of the key is for combat only: out of combat the click on
+    -- an enemy is then left to the game (target, attack, loot).
+    if out.soft and targeting then out.softEnemy = enemyAnyTime or "combat" end
     out.tooLong = out.length > MACRO_LIMIT
     if out.tooLong then
         out.problems[#out.problems + 1] = "Too many rules for one key: " .. out.length
