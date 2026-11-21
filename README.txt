@@ -257,6 +257,9 @@ Commands
                                 the game's own frame around the legend
   /clg iconstyle button | flat  the action bar's frame around each icon,
                                 or a thin black edge
+  /clg barmarks off | above | on
+                                a small mouse above or on each action
+                                button whose spell a plain click casts
   /clg bgcolor <RRGGBB>         background color, e.g. /clg bgcolor 101418
   /clg bgalpha <0-1>            background opacity
   /clg pad <0-20>               background padding

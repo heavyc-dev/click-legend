@@ -597,39 +597,46 @@ local function LabelWidth()
     return db.labelSize * 3 + 7
 end
 
+-- A glyph frame: the drawn mouse and keycap pieces and the picture's textures.
+-- Also used for the marks on action buttons (Bars.lua).
+local function NewGlyph(parent)
+    local g = CreateFrame("Frame", nil, parent)
+    local function Rect(layer, r, gr, b, a)
+        local t = g:CreateTexture(nil, layer)
+        t:SetColorTexture(r, gr, b, a or 1)
+        return t
+    end
+    g.outline = Rect("BACKGROUND", 0, 0, 0)
+    g.outline:SetAllPoints()
+    g.body = Rect("BORDER", 0.42, 0.44, 0.48)
+    g.divider = Rect("ARTWORK", 0, 0, 0, 0.8)
+    g.line = Rect("ARTWORK", 0, 0, 0, 0.8)
+    g.lit = Rect("OVERLAY", 1, 1, 1)
+    g.tri = { Rect("OVERLAY", 1, 1, 1), Rect("OVERLAY", 1, 1, 1), Rect("OVERLAY", 1, 1, 1) }
+    g.num = g:CreateFontString(nil, "OVERLAY")
+    g.art = g:CreateTexture(nil, "BORDER")              -- the mouse picture, and the lit button over it
+    g.art:SetAllPoints()
+    g.artLit = g:CreateTexture(nil, "ARTWORK")
+    g.artLit:SetAllPoints()
+    -- On an icon's corner: the picture again in black, a pixel out on each
+    -- side, so that it reads over any spell icon.
+    g.slot = g:CreateTexture(nil, "BACKGROUND", nil, -1)  -- framed label: the empty slot
+    g.slot:SetAllPoints()
+    g.slot:Hide()
+    g.frame = g:CreateTexture(nil, "OVERLAY", nil, 7)     -- framed label: the button's frame
+    g.frame:Hide()
+    g.shade = {}
+    for n = 1, 4 do
+        g.shade[n] = g:CreateTexture(nil, "BACKGROUND")
+        g.shade[n]:Hide()
+    end
+    return g
+end
+
 local function GetGlyph(i)
     local g = glyphs[i]
     if not g then
-        g = CreateFrame("Frame", nil, panel)
-        local function Rect(layer, r, gr, b, a)
-            local t = g:CreateTexture(nil, layer)
-            t:SetColorTexture(r, gr, b, a or 1)
-            return t
-        end
-        g.outline = Rect("BACKGROUND", 0, 0, 0)
-        g.outline:SetAllPoints()
-        g.body = Rect("BORDER", 0.42, 0.44, 0.48)
-        g.divider = Rect("ARTWORK", 0, 0, 0, 0.8)
-        g.line = Rect("ARTWORK", 0, 0, 0, 0.8)
-        g.lit = Rect("OVERLAY", 1, 1, 1)
-        g.tri = { Rect("OVERLAY", 1, 1, 1), Rect("OVERLAY", 1, 1, 1), Rect("OVERLAY", 1, 1, 1) }
-        g.num = g:CreateFontString(nil, "OVERLAY")
-        g.art = g:CreateTexture(nil, "BORDER")              -- the mouse picture, and the lit button over it
-        g.art:SetAllPoints()
-        g.artLit = g:CreateTexture(nil, "ARTWORK")
-        g.artLit:SetAllPoints()
-        -- On an icon's corner: the picture again in black, a pixel out on each
-        -- side, so that it reads over any spell icon.
-        g.slot = g:CreateTexture(nil, "BACKGROUND", nil, -1)  -- framed label: the empty slot
-        g.slot:SetAllPoints()
-        g.slot:Hide()
-        g.frame = g:CreateTexture(nil, "OVERLAY", nil, 7)     -- framed label: the button's frame
-        g.frame:Hide()
-        g.shade = {}
-        for n = 1, 4 do
-            g.shade[n] = g:CreateTexture(nil, "BACKGROUND")
-            g.shade[n]:Hide()
-        end
+        g = NewGlyph(panel)
         glyphs[i] = g
     end
     return g
@@ -1643,5 +1650,8 @@ ns.Render        = Render
 ns.ResolveFont   = ResolveFont
 ns.SpellCast     = SpellCast
 -- For looking at a drawing.
+ns.NewGlyph      = NewGlyph
+ns.DrawGlyph     = DrawGlyph
+ns.HasPicture    = HasPicture
 ns.LegendPieces   = function() return { mice = mice, lines = lines, cells = cells, bars = bars, labels = labels, glyphs = glyphs } end
 ns.SideColor     = SideColor

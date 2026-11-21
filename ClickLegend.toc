@@ -18,6 +18,7 @@ MouseLayout.lua
 Provider.lua
 Display.lua
 Tooltip.lua
+Bars.lua
 Options.lua
 Skin.lua
 Window.lua

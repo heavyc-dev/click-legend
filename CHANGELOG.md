@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+Added:
+- Action bar marks: a small mouse with the button lit, above or on each action button whose spell a click with no modifier also casts (a macro counts by the spell it shows). Display tab, "Mark spells on the action bars" (`/clg barmarks off | above | on`); off by default. Works with the game's bars, EllesmereUI's and Bartender's.
+
 ## 3.2.0
 Changed:
 - Legend icons are drawn as the game's own action buttons: the action bar's frame, its rounded corners, its glow under the cursor and when a spell is cast. Look tab, "Icon frame" (`/clg iconstyle button | flat`); Flat is the old look.

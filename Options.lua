@@ -105,6 +105,11 @@ local OPTIONS = {
               .. "turns orange. The three colors are on the Look tab." },
         { kind = "toggle", key = "flash", text = "Flash an icon when its spell is cast",
           tip = "A short flash on the legend each time one of the shown spells goes off." },
+        { header = "ACTION BARS" },
+        { kind = "choice", key = "barMarks", text = "Mark spells on the action bars",
+          values = { off = "No", above = "Above the button", on = "On the button" }, order = { "off", "above", "on" },
+          tip = "A small mouse with the button lit, on each action button whose spell a click with no modifier "
+              .. "also casts. Only where the spell is the same: Shift, Ctrl and Alt clicks are not marked." },
         { header = "WHILE HOVERING A UNIT" },
         -- One row for two settings (`hoverDim` and `offStyle`).
         { kind = "choice", text = "Spells that do not apply", refresh = true,

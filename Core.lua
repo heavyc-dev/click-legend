@@ -75,6 +75,7 @@ local DEFAULTS = {
     source = "auto",            -- auto | own | eui | clique | vuhdo | healbot | blizzard
     layers = "held",            -- held | all: which modifier layers are drawn
     hideBasics = false,         -- leave the plain left click "Target" and right click "Menu" out of the legend
+    barMarks = "off",           -- off | above | on: the mouse picture on action buttons whose spell a plain click casts
     hideNPC = false,            -- no legend while the cursor is on a friendly NPC in the world
     hoverDim = true,            -- dim the row that does not apply to the hovered unit
     hideMissing = true,         -- leave bindings that cannot fire (spell not learned, macro gone) out of the legend
@@ -134,6 +135,7 @@ local CHOICES = {
     offStyle = { dim = true, hide = true },
     border = { none = true, tooltip = true, dialog = true },
     iconStyle = { button = true, flat = true },
+    barMarks = { off = true, above = true, on = true },
     anchorSide = { above = true, below = true, left = true, right = true },
     labelStyle = { text = true, icon = true, corner = true },
 }

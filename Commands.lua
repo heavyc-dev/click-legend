@@ -88,6 +88,7 @@ local function Help()
     print("  /clg layers held | all - modifier layers shown (now " .. db.layers .. ")")
     print("  /clg anchor screen | party | cursor, /clg side above | below | left | right, /clg gap <0-60>")
     print("  /clg basics - hide or show the plain Target and Menu clicks (now " .. (db.hideBasics and "hidden" or "shown") .. ")")
+    print("  /clg barmarks off | above | on - mark action buttons whose spell a plain click casts (now " .. db.barMarks .. ")")
     print("  /clg npc - hide the legend over friendly NPCs, or not (now " .. (db.hideNPC and "hidden" or "shown") .. ")")
     print("  /clg unlearned - hide or show bindings whose spell is not learned yet (now " .. (db.hideMissing and "hidden" or "shown") .. ")")
     print("  /clg hoverdim | missing - toggle row dimming, greying of broken bindings")
@@ -130,7 +131,7 @@ local NUMBERS = {
     labelsize = "labelSize", bgalpha = "bgA", pad = "bgPadding", gap = "anchorGap", mouse = "mouseSize",
 }
 local CHOICE_KEYS = {
-    border = "border", iconstyle = "iconStyle", layers = "layers", anchor = "anchor", source = "source", side = "anchorSide", off = "offStyle", mousepic = "mousePic",
+    border = "border", iconstyle = "iconStyle", barmarks = "barMarks", layers = "layers", anchor = "anchor", source = "source", side = "anchorSide", off = "offStyle", mousepic = "mousePic",
     visible = "visibility", labelstyle = "labelStyle", layout = "layout", rows = "rows", sort = "sort",
 }
 local COLORS = { bgcolor = "bg", allycolor = "ally", enemycolor = "enemy",
