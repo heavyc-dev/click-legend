@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 3.3.0
 Added:
 - Action bar marks: a small mouse with the button lit, above or on each action button whose spell a click with no modifier also casts (a macro counts by the spell it shows). Display tab, "Mark spells on the action bars" (`/clg barmarks off | above | on`); off by default. Works with the game's bars, EllesmereUI's and Bartender's.
 
