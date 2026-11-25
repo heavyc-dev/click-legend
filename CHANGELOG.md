@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.3.1
+Fixed:
+- With OPie installed, every unit in the world was taken for a unit frame: "Hide over friendly NPCs" did nothing, a legend set to show on unit frames only showed over the world too, tooltip lines appeared over world units with that option off, and mouseover casting on plain left or right click did not work on players in the world. OPie lays a frame of its own over the screen, and ClickLegend only looked at the topmost frame under the cursor. It now looks at all of them, so the same conflict with any other addon that does this is fixed as well. Thanks to dekazakoff for tracking it down.
+
+Changed:
+- "Hide over friendly NPCs" now also leaves the binding lines out of the tooltip of a friendly NPC in the world.
+
 ## 3.3.0
 Added:
 - Action bar marks: a small mouse with the button lit, above or on each action button whose spell a click with no modifier also casts (a macro counts by the spell it shows). Display tab, "Mark spells on the action bars" (`/clg barmarks off | above | on`); off by default. Works with the game's bars, EllesmereUI's and Bartender's.

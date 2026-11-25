@@ -34,6 +34,7 @@ local function AddTooltipBindingsNow(tooltip)
     if tooltip ~= GameTooltip or not db or not db.tooltip or not layers then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
     if not db.tooltipWorld and OverWorld() then return end
+    if db.hideNPC and ns.OverNPC() then return end
     local unit = TooltipUnit(tooltip)
     if not unit then return end
     local ok, hostile = pcall(UnitCanAttack, "player", unit)

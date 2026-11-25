@@ -410,15 +410,21 @@ local function SoftWanted()
     elseif not isPlayer then
         return false
     end
-    local focus
+    -- Over the world: nothing has the mouse, or the world frame is among the
+    -- frames that do (another addon's full-screen frame may come first).
     if GetMouseFoci then
         local okf, foci = pcall(GetMouseFoci)
-        focus = okf and type(foci) == "table" and foci[1] or nil
+        if not okf or type(foci) ~= "table" or foci[1] == nil then return what end
+        for i = 1, #foci do
+            if foci[i] == WorldFrame then return what end
+        end
+        return false
     elseif GetMouseFocus then
         local okf, f = pcall(GetMouseFocus)
-        focus = okf and f or nil
+        local focus = okf and f or nil
+        return (focus == nil or focus == WorldFrame) and what or false
     end
-    return (focus == nil or focus == WorldFrame) and what or false
+    return what
 end
 
 local function SoftApply(force)

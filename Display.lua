@@ -216,16 +216,24 @@ end
 -- giver, a trainer). The setting `hideNPC` takes the legend away over one.
 local hover = { side = nil, onFrame = false, dead = false, npc = false }
 
+-- The cursor is over the world when nothing has the mouse or the world frame
+-- is among the frames that do. Another addon may lay a frame of its own over
+-- the whole screen that passes the mouse on (OPie does): the list then holds
+-- that frame first and the world frame after it, so every entry is looked at.
 local function OverWorld()
-    local focus
     if GetMouseFoci then
         local ok, foci = pcall(GetMouseFoci)
-        focus = ok and type(foci) == "table" and foci[1] or nil
+        if not ok or type(foci) ~= "table" or foci[1] == nil then return true end
+        for i = 1, #foci do
+            if foci[i] == WorldFrame then return true end
+        end
+        return false
     elseif GetMouseFocus then
         local ok, f = pcall(GetMouseFocus)
-        focus = ok and f or nil
+        local focus = ok and f or nil
+        return focus == nil or focus == WorldFrame
     end
-    return focus == nil or focus == WorldFrame
+    return true
 end
 
 -- Returns true when the hovered unit's side or frame state changed.
@@ -262,6 +270,20 @@ end
 -- The side of the unit under the cursor ("ally", "enemy" or nil) and whether
 -- it is dead. Cast.lua reads this to show what a key would do right now.
 function ns.HoverState() return hover.side, hover.dead end
+
+-- Asked afresh, not read from `hover`: the tooltip is built the moment the
+-- cursor arrives, before the next hover tick. Same test as in ReadHover.
+function ns.OverNPC()
+    if not (UnitExists and UnitCanAttack and UnitIsPlayer and UnitPlayerControlled) then return false end
+    local ok, exists = pcall(UnitExists, "mouseover")
+    local ok2, hostile = pcall(UnitCanAttack, "player", "mouseover")
+    local ok3, isPlayer = pcall(UnitIsPlayer, "mouseover")
+    local ok4, owned = pcall(UnitPlayerControlled, "mouseover")
+    if not (ok and ok2 and ok3 and ok4) then return false end
+    if issecretvalue and (issecretvalue(exists) or issecretvalue(hostile)
+        or issecretvalue(isPlayer) or issecretvalue(owned)) then return false end
+    return (exists and not hostile and not isPlayer and not owned and OverWorld()) and true or false
+end
 
 -------------------------------------------------------------------------------
 --  Moving the legend
